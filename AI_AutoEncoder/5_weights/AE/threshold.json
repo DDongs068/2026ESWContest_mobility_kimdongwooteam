@@ -1,0 +1,46 @@
+{
+  "variant": "AE",
+  "train_data_note": "정상 데이터만 학습 + 온도 입력에 실측 NTC 센서 특성 반영 (1_preprocess/preprocess.py)",
+  "window_samples": 10,
+  "hist_step": 5,
+  "n_expert": 3,
+  "margin": 1.2,
+  "reset": true,
+  "hparams": {
+    "SEED": 42,
+    "EPOCHS": 60,
+    "LR": 0.001,
+    "WEIGHT_DECAY": 0.0001,
+    "PATIENCE": 15,
+    "BATCH": "clip(N/20, 64, 512)",
+    "TAU_MARGIN": 1.2,
+    "L_HIST": 12,
+    "train_data": "정상만 (가짜 이상 미사용)"
+  },
+  "experts": {
+    "chg": {
+      "cell": 0.5089130401611328,
+      "pack": 0.6727662682533264,
+      "n_train": 52805,
+      "n_val": 11635,
+      "cell_val_median": 0.00949781946837902,
+      "pack_val_median": 0.03675813972949982
+    },
+    "dis": {
+      "cell": 1.1706976890563965,
+      "pack": 0.8352257013320923,
+      "n_train": 95688,
+      "n_val": 20380,
+      "cell_val_median": 0.03605420142412186,
+      "pack_val_median": 0.01861250028014183
+    },
+    "rest": {
+      "cell": 1.1876260042190552,
+      "pack": 0.7939201593399048,
+      "n_train": 41903,
+      "n_val": 9032,
+      "cell_val_median": 0.02326531894505024,
+      "pack_val_median": 0.053630802780389786
+    }
+  }
+}

@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# AI_AutoEncoder: 원본 시뮬레이션·전처리 산출물·재학습 결과는 저장소에 넣지 않음
+AI_AutoEncoder/raw/
+AI_AutoEncoder/data/*.npz
+AI_AutoEncoder/data/meta_*.csv
+AI_AutoEncoder/5_weights/AE_retrain/
+.DS_Store
