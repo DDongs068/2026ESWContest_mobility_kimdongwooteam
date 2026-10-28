@@ -47,8 +47,8 @@ flowchart LR
 │   ├── 3_model/                  모델 (PyTorch · Pi 용 numpy 추론)
 │   ├── 4_eval/                   평가
 │   ├── 5_weights/AE/             모델 가중치
-│   └── RaspberryPi/              Pi 5 실행 코드: AE 판정 서버 · 모니터 UI · 통신 · 자동 실행 서비스
-└── docs/                         README 그림 · 그림 생성 코드
+│   ├── RaspberryPi/              Pi 5 실행 코드: AE 판정 서버 · 모니터 UI · 통신 · 자동 실행 서비스
+│   └── figures/                  README 그림
 ```
 
 | 폴더 | 내용 | 설명서 |
@@ -56,7 +56,6 @@ flowchart LR
 | [`MCU/`](MCU) | BQ76922 측정 · 안전 감시 · 부하/충전/밸런싱 제어 · Pi 통신 · 측정 재생 | [MCU/README.md](MCU/README.md) |
 | [`AI_AutoEncoder/`](AI_AutoEncoder) | 1. 전처리 · 2. 모델 학습 · 3. 모델 · 4. 평가 · 5. 모델 가중치 | [AI_AutoEncoder/README.md](AI_AutoEncoder/README.md) |
 | [`AI_AutoEncoder/RaspberryPi/`](AI_AutoEncoder/RaspberryPi) | Pi에서 AE를 실행하는 판정 서버 · 모니터 UI · 통신 코드 | [RaspberryPi/README.md](AI_AutoEncoder/RaspberryPi/README.md) |
-| [`docs/`](docs) | 그림 · 그림 생성 코드 | — |
 
 ---
 
@@ -74,7 +73,7 @@ MCU 펌웨어(STM32G474)의 코드 설명, 빌드 방법, 통신 규약, 안전 
 
 학습은 PC에서 하고, **판정은 Raspberry Pi 5가 합니다.** Pi는 `AI_AutoEncoder`의 모델 코드와 가중치를 그대로 불러와 MCU가 보낸 측정값을 1 s마다 판정하고, 결과를 모니터 UI에 표시합니다. 판정 서버는 `AI_AutoEncoder/RaspberryPi`에 있습니다.
 
-![AE 구성](docs/ae_architecture.png)
+![AE 구성](AI_AutoEncoder/figures/ae_architecture.png)
 
 1. **입력**
    - 셀 전압 V1~V4, 셀 온도 T1~T4, 팩 전류 I를 10 Hz로 받습니다.
@@ -116,13 +115,13 @@ MCU 펌웨어(STM32G474)의 코드 설명, 빌드 방법, 통신 규약, 안전 
 | **하드웨어 보호보다 먼저 경보** | 보호가 동작한 23 run 중 **23 run**, 선행 시간 중앙 **약 5분** |
 | 하드웨어 보호가 끝까지 동작하지 않은 ISC | 37 run → AE는 모두 탐지 |
 
-![탐지 예시](docs/ae_detection_example.png)
+![탐지 예시](AI_AutoEncoder/figures/ae_detection_example.png)
 
 위 그림은 주행 중 셀2에 2.9 Ω 내부단락이 생긴 예입니다. AE는 8초 만에 경보를 냈고, 하드웨어 보호는 12.9분 뒤에 동작했습니다.
 
 ### 모니터 UI (Raspberry Pi 5)
 
-![모니터 UI](docs/ui_monitor.png)
+![모니터 UI](AI_AutoEncoder/figures/ui_monitor.png)
 
 - 셀별 전압·온도·전류와 그 변화율을 실시간으로 보여 줍니다.
 - 셀별 AE 이상도와 판정 결과(정상 / 이상, 이상 셀), 기존 임계값 판정을 함께 표시합니다.
