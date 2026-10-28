@@ -4,26 +4,63 @@
 
 4S 배터리 팩용 BMS 회로를 직접 설계했습니다. 그 위에서 경량 AutoEncoder(AE)가 열폭주 전조를 하드웨어 보호보다 먼저 찾아 알려 줍니다. 대상 전조는 위험 내부단락(soft ISC)과 과충전입니다.
 
-```
-배터리 팩 (4S1P, Samsung 35E)
-  └─ BQ76922 (셀 전압·온도·전류 측정, 하드웨어 보호)
-       └─ STM32G474 (10 Hz 수집, Ethernet W5500)
-            └─ Raspberry Pi 5 (AE 판정 1 s 마다, 모니터 UI)
+## 전체 구성
+
+```mermaid
+flowchart LR
+    subgraph HW["배터리 · 회로"]
+        PACK["배터리 팩<br/>4S1P Samsung 35E"] --> BQ["BQ76922<br/>셀 전압·온도·전류 측정<br/>하드웨어 보호"]
+    end
+    subgraph FW["MCU/ — STM32G474 펌웨어"]
+        DRV["bq76922.c<br/>BMIC 드라이버"] --> APP["bms_app.c<br/>100 ms 측정 · 부하/충전/밸런싱"]
+        SAFE["safety_supervisor.c<br/>독립 안전 감시 · 래치"] --> APP
+        APP --> ETH["ethernet_test.c<br/>W5500 UDP 통신"]
+        DEMO["demo_stream.c<br/>시뮬레이션 측정 재생"] --> ETH
+    end
+    subgraph PI["Raspberry Pi 5"]
+        AE["AE 판정 · 1 s 마다<br/>3_model/np_model.py<br/>5_weights/AE"]
+    end
+    subgraph TRAIN["AI_AutoEncoder/ — 학습 PC"]
+        SIM["Simscape 디지털 트윈<br/>정상 · 이상 시뮬레이션"] --> PRE["1_preprocess<br/>1 s 윈도우 요약"]
+        PRE --> TR["2_train<br/>정상만 학습"] --> W["5_weights/AE"]
+        W --> EV["4_eval<br/>평가"]
+    end
+    BQ -- "I²C" --> DRV
+    ETH -- "UDP 5001 측정 (10 Hz)" --> AE
+    AE -- "UDP 5000 AI:1 → 출력 차단" --> ETH
+    W -. "가중치 배포" .-> AE
 ```
 
 ## 저장소 구성
 
-| 폴더 | 내용 |
-|---|---|
-| `MCU/` | STM32 펌웨어 (회로 파트) — 추후 업로드 |
-| [`AI_AutoEncoder/`](AI_AutoEncoder) | 1. 전처리 · 2. 모델 학습 · 3. 모델 · 4. 평가 · 5. 모델 가중치 |
-| [`docs/`](docs) | 그림과 그림 생성 코드 |
+```
+2026ESWContest_mobility_kimdongwooteam/
+├── MCU/                          STM32G474 펌웨어 (STM32CubeIDE 프로젝트)
+│   ├── Core/Src/                 main.c · bq76922.c · bms_app.c · safety_supervisor.c · ethernet_test.c · demo_stream.c
+│   ├── Drivers/                  ST HAL · CMSIS
+│   └── aibms_final_mcu.ioc · Makefile · 링커 스크립트
+├── AI_AutoEncoder/               AE 이상 탐지
+│   ├── 1_preprocess/             전처리
+│   ├── 2_train/                  모델 학습
+│   ├── 3_model/                  모델 (PyTorch · Pi 용 numpy 추론)
+│   ├── 4_eval/                   평가
+│   └── 5_weights/AE/             모델 가중치
+└── docs/                         README 그림 · 그림 생성 코드
+```
+
+| 폴더 | 내용 | 설명서 |
+|---|---|---|
+| [`MCU/`](MCU) | BQ76922 측정 · 안전 감시 · 부하/충전/밸런싱 제어 · Pi 통신 · 측정 재생 | [MCU/README.md](MCU/README.md) |
+| [`AI_AutoEncoder/`](AI_AutoEncoder) | 1. 전처리 · 2. 모델 학습 · 3. 모델 · 4. 평가 · 5. 모델 가중치 | [AI_AutoEncoder/README.md](AI_AutoEncoder/README.md) |
+| [`docs/`](docs) | 그림 · 그림 생성 코드 | — |
 
 ---
 
 ## 1. 회로 파트
 
-> 추후 작성 예정입니다.
+> 회로 설계 설명은 추후 작성 예정입니다.
+
+MCU 펌웨어(STM32G474)의 코드 설명, 빌드 방법, 통신 규약, 안전 동작은 [MCU/README.md](MCU/README.md)에 정리했습니다.
 
 ---
 
