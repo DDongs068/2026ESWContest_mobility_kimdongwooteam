@@ -5,7 +5,7 @@ void Error_Handler(void);
 void Board_ForceSafeOutputs(void);
 void Board_MotorSet(int32_t m1, int32_t m2);
 typedef struct {
-    int32_t pwm1_permille, pwm2_permille; /* Actual timer duty with direction. */
+    int32_t pwm1_permille, pwm2_permille;
     uint32_t pwm_hz;
 } Motor_Status;
 extern volatile Motor_Status g_motor;

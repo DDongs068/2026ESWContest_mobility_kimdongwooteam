@@ -40,12 +40,12 @@ int Demo_Start(uint32_t session)
 {
     if (g_demo.mode && g_demo.session==session) return 0;
     Demo_Init(); g_demo.mode=1; g_demo.session=session; last_input=HAL_GetTick();
-    g_control.off=1; /* Entry is explicit and starts with physical loads OFF. */
+    g_control.off=1;
     return 0;
 }
 void Demo_Stop(void)
 {
-    Demo_Init(); g_control.off=1; /* Return to live never restarts loads. */
+    Demo_Init(); g_control.off=1;
 }
 int Demo_ReceiveHex(const char *hex)
 {
@@ -61,7 +61,6 @@ int Demo_ReceiveHex(const char *hex)
     rc=-41;
     if (!g_demo.mode || halted || u32(wire+4)!=g_demo.session) goto reject;
     f.sequence=u32(wire+8); f.ms=u32(wire+12);
-    /* Retransmission of the most recently ACKed frame is idempotent. */
     if (have_input && f.sequence==next_sequence-1u && f.ms==previous_ms && u32(wire+68)==previous_crc) {
         ++g_demo.duplicates; return 0;
     }
@@ -102,10 +101,9 @@ void Demo_Update(void)
         }
         if (current.current<=-6000) flags|=4u;
         if (flags && !g_demo.baseline_flags) g_demo.first_baseline_ms=current.ms;
-        g_demo.baseline_flags|=flags; /* Latched simulation comparison, not a BMIC register. */
+        g_demo.baseline_flags|=flags;
         maxima[maxima_head++%100u]=maximum;
         if (maxima_count<100u) ++maxima_count;
-        /* PPT's separate overvoltage rule on a full 10s/100-sample window. */
         if (maxima_count==100u && (g_demo.played-100u)%50u==0u) {
             int32_t sorted[100]; memcpy(sorted,maxima,sizeof sorted);
             for (unsigned i=1;i<100u;++i) {
@@ -116,10 +114,8 @@ void Demo_Update(void)
             g_demo.rule_ready=1;
             g_demo.spec_overcharge=(int64_t)sorted[49]+sorted[50]>8410;
         }
-        /* Instantaneous context for diagnostics only; AE router uses window mean. */
         g_demo.route=current.current>30?1u:current.current< -30?2u:0u;
     }
-    /* Transport gap cannot be classified as a healthy battery window. */
     if (!count && now-last_input>1000u && !halted) {
         halted=1; g_demo.valid=0; g_demo.last_result=-45; ++g_demo.underruns; g_control.off=1;
     }

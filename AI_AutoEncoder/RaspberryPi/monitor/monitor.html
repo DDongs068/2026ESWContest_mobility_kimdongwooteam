@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BMS Monitor · AE</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #182029; --line: #2a3540; --text: #d8dee6; --muted: #8a96a3;
+    --ok: #2ecc71; --bad: #ff4d4f; --wait: #8a96a3; --tau: #ff4d4f; --score: #36d6c3; --cur: #c9d1d9; --grad: #ff5fa2;
+    --up: #ff5b5b; --down: #4aa3ff; --warn: #ffb347;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans CJK KR", "NanumGothic", sans-serif; }
+  body { display: grid; grid-template-rows: auto 1fr; height: 100vh; overflow: hidden; }
+  header { display: flex; align-items: center; gap: 12px; padding: 5px 10px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 20px; margin: 0; font-weight: 600; white-space: nowrap; }
+  #opState { font-size: 17px; white-space: nowrap; }
+  header .meta { font-size: 13px; color: var(--muted); flex: 1; min-width: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  main { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1.25fr); gap: 8px; padding: 8px; min-height: 0; }
+
+  .grid { display: grid; grid-template-columns: 84px repeat(3, minmax(0, 1fr)); grid-template-rows: auto repeat(4, minmax(0, 1fr)); gap: 4px; min-height: 0; }
+  .colhead { font-size: 16px; font-weight: 600; text-align: center; color: var(--muted); }
+  .colhead small { font-weight: 400; font-size: 13px; } .gkey { color: var(--grad); }
+  .rowhead { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid; border-radius: 5px;
+    padding: 3px 6px; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; justify-content: center; gap: 1px; }
+  .rowhead b { font-size: 17px; color: var(--text); }
+  .rowhead.alarm { background: rgba(255,77,79,.22); border-color: var(--bad); }
+  .cellbox { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; position: relative; min-height: 0; }
+  .cellbox canvas, .single canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  .side { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; min-height: 0; min-width: 0; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; min-height: 0; }
+  .panel h2 { font-size: 16px; margin: 0 0 4px; display: flex; justify-content: space-between; gap: 6px; }
+  .panel h2 span { color: var(--muted); font-weight: 400; font-size: 13px; white-space: nowrap; }
+  .single { flex: 1; position: relative; min-height: 0; }
+
+  table.board { width: 100%; border-collapse: separate; border-spacing: 3px; font-variant-numeric: tabular-nums; }
+  .board th { font-size: 15px; color: var(--muted); font-weight: 600; }
+  .board td { background: #0b1016; border: 1px solid var(--line); border-radius: 4px; padding: 7px 10px;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 26px; text-align: right; transition: background .25s; }
+  .board td.name { font-family: inherit; font-size: 18px; font-weight: 700; text-align: left; border-left: 4px solid; }
+  .board td.up { color: var(--up); background: rgba(255,91,91,.13); } .board td.down { color: var(--down); background: rgba(74,163,255,.13); }
+  .board .d { font-size: 15px; margin-left: 4px; }
+
+  .bufrow { display: grid; grid-template-columns: 92px 1fr auto; gap: 8px; align-items: center; font-size: 13px; margin: 3px 0; }
+  .bar { position: relative; height: 20px; background: #0b1016; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .bar .fill { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #1f6f8b, #36d6c3); transition: width .15s linear; }
+  .bar .hop { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--warn); }
+  .slots { display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px; }
+  .slot { height: 20px; border-radius: 3px; background: #0b1016; border: 1px solid var(--line); }
+  .slot.dis { background: #2b7a4b; } .slot.rest { background: #5a6b7c; } .slot.chg { background: #a07a20; }
+  .slot.bad { box-shadow: inset 0 0 0 2px var(--bad); }
+  .flash { animation: fl .6s ease-out; } @keyframes fl { from { box-shadow: 0 0 0 3px var(--score); } }
+  .kv { font-size: 13px; color: var(--muted); } .kv b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  #status { border-radius: 6px; padding: 8px; text-align: center; border: 2px solid var(--wait); }
+  #status .big { font-size: 36px; font-weight: 800; letter-spacing: 1px; }
+  #status .small { font-size: 15px; margin-top: 2px; }
+  #status.NORMAL { border-color: var(--ok); background: rgba(46,204,113,.12); } #status.NORMAL .big { color: var(--ok); }
+  #status.ABNORMAL { border-color: var(--bad); background: rgba(255,77,79,.18); animation: blink 1s steps(2) infinite; } #status.ABNORMAL .big { color: var(--bad); }
+  #status.WAITING .big, #status.OFFLINE .big { color: var(--wait); }
+  @keyframes blink { 50% { background: rgba(255,77,79,.05); } }
+  .twin { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; text-align: left; }
+  .lane { border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; font-size: 13px; }
+  .lane b { font-size: 16px; } .lane.trip { border-color: var(--bad); } .lane.trip b { color: var(--bad); }
+  #msgs { font-size: 12px; color: var(--muted); white-space: pre-line; max-height: 3.6em; overflow: hidden; text-align: left; margin-top: 4px; }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .btns button { font: inherit; font-size: 14px; font-weight: 700; padding: 6px 0; border-radius: 6px; cursor: pointer; border: 1px solid var(--line); color: var(--text); background: #223040; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BMS Monitor · AI</h1>
+  <span id="opState" style="display:none">라우터 경로: -</span>
+  <span id="srcBadge" style="display:none;font-size:14px;padding:2px 10px;border-radius:12px;border:1px solid var(--line)">출처 -</span>
+  <a href="/buffer" target="_blank" style="display:none;font-size:14px;color:var(--score)">입력 버퍼 시트 ↗</a>
+  <div class="meta" id="meta">connecting...</div>
+</header>
+<main>
+  <section class="grid" id="grid">
+    <div></div>
+    <div class="colhead">온도 [°C] <small class="gkey">/ dT/dt [°C/min]</small></div>
+    <div class="colhead">전압 [V] <small class="gkey">/ dV/dt [mV/s]</small></div>
+    <div class="colhead">전류 [A] <small class="gkey">/ dI/dt [A/s]</small> <small>(팩 공통)</small></div>
+  </section>
+  <section class="side">
+    <div class="panel">
+      <h2>수신 센서값 <span id="rxTxt">-</span></h2>
+      <table class="board"><thead><tr><th></th><th>전압 [V]</th><th>전류 [A]</th><th>온도 [°C]</th></tr></thead><tbody id="board"></tbody></table>
+    </div>
+    <div class="panel" style="display:none">
+      <h2>AI 입력 버퍼 <span id="inferTxt">-</span></h2>
+      <div class="bufrow"><span>샘플 버퍼</span><div class="bar"><div class="fill" id="bufFill"></div><div class="hop" id="hopMark"></div></div><b id="bufTxt">0/10</b></div>
+      <div class="kv" id="hopTxt">윈도우 = 최근 10 샘플 (1 s) · 새 샘플 10개(1 s)마다 판정</div>
+      <div class="bufrow" style="margin-top:6px"><span>윈도우 이력</span><div class="slots" id="slots"></div><b id="histTxt">0/12</b></div>
+      <div class="kv">5 s 간격 윈도우 12개 = 55 s 흐름 · 운전 상태가 바뀌면 이력 리셋 · 색: <span style="color:#2b9a5b">주행</span> / <span style="color:#8a9aab">휴지</span> / <span style="color:#c09a30">충전</span></div>
+    </div>
+    <div class="panel">
+      <h2>셀별 AI 이상도 <span id="scoreTxt"></span></h2>
+      <div class="single"><canvas id="cScore"></canvas></div>
+    </div>
+    <div id="status" class="WAITING">
+      <div class="big" id="statusBig">WAITING</div>
+      <div class="small" id="statusSmall">센서 데이터 대기 중</div>
+      <div class="twin">
+        <div class="lane" id="laneAI">AI 판정 (AE)<br><b id="aiTxt">-</b></div>
+        <div class="lane" id="laneLegacy"><span id="legSrc">기존 임계값 판정</span><br><b id="legTxt">-</b></div>
+      </div>
+      <div id="msgs"></div>
+      <div class="btns"><button onclick="sendCommand('motor_on')">모터 ON</button><button onclick="sendCommand('motor_off')">모터 OFF</button></div>
+    </div>
+  </section>
+</main>
+<script>
+"use strict";
+const POLL_MS = 500;
+const CHART_FONT = 15, CHART_FONT_SMALL = 12, SMOOTH_PTS = 3, SMOOTH_GT = 15, SCORE_CLIP = 500;
+const CELL_COLORS = ["#4aa3ff", "#ffb347", "#36d6c3", "#c08cff"];
+const ROUTE_KO = { chg: "충전", dis: "주행·방전", rest: "휴지" };
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const COLS = ["t", "v", "i"];
+
+const gridEl = document.getElementById("grid");
+for (let r = 0; r < 4; r++) {
+  gridEl.insertAdjacentHTML("beforeend", `
+    <div class="rowhead" id="row${r}" style="border-left-color:${CELL_COLORS[r]}">
+      <b>Cell ${r + 1}</b><span id="rv${r}">- V</span><span id="rt${r}">- °C</span><span id="rs${r}">이상도 -</span>
+    </div>` + COLS.map(c => `<div class="cellbox"><canvas id="${c}${r}"></canvas></div>`).join(""));
+}
+const board = document.getElementById("board");
+for (let k = 0; k < 4; k++) board.insertAdjacentHTML("beforeend",
+  `<tr><td class="name" style="border-left-color:${CELL_COLORS[k]}">Cell ${k + 1}</td><td id="bv${k}">-</td><td id="bi${k}">-</td><td id="bt${k}">-</td></tr>`);
+const slots = document.getElementById("slots");
+for (let k = 0; k < 12; k++) slots.insertAdjacentHTML("beforeend", `<div class="slot" id="slot${k}"></div>`);
+
+function smooth(a, k) {
+  if (!a || a.length < k) return a || [];
+  const h = Math.floor(k / 2), out = new Array(a.length);
+  for (let i = 0; i < a.length; i++) { let s = 0, n = 0; for (let j = Math.max(0, i - h); j <= Math.min(a.length - 1, i + h); j++) { s += a[j]; n++; } out[i] = s / n; }
+  return out;
+}
+function extent(arrs) { let lo = Infinity, hi = -Infinity; for (const a of arrs) for (const v of a) if (isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); } return [lo, hi]; }
+function fmt(v, d) { return isFinite(v) ? v.toFixed(d) : "-"; }
+function pad(lo, hi, frac, minSpan) { const mid = (lo + hi) / 2, span = Math.max(hi - lo, minSpan) * (1 + frac); return [mid - span / 2, mid + span / 2]; }
+const prev = {};
+function tick(id, val, dec) {
+  const td = document.getElementById(id); if (val == null) return;
+  const p = prev[id], d = p == null ? 0 : val - p, eps = Math.pow(10, -dec) / 2;
+  const cls = Math.abs(d) < eps ? "" : (d > 0 ? "up" : "down");
+  td.className = cls;
+  td.innerHTML = `${val.toFixed(dec)}<span class="d">${cls === "up" ? "▲" : cls === "down" ? "▼" : "–"}</span>`;
+  if (cls || p == null) prev[id] = val;
+}
+
+function drawChart(id, series, opt) {
+  const cv = document.getElementById(id);
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || !h) return;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const has2 = opt.y2min != null, F = window.innerWidth < 900 ? CHART_FONT_SMALL : CHART_FONT;
+  const L = 4, R = 4, T = 4, B = 4, pw = w - L - R, ph = h - T - B;
+  ctx.font = `${F}px sans-serif`;
+  const xs = series.flatMap(s => s.x);
+  if (!xs.length || !isFinite(opt.ymin)) { ctx.fillStyle = css("--muted"); ctx.fillText("데이터 없음", L + 4, h / 2); return; }
+  let xmin = opt.xmin ?? Math.min(...xs), xmax = opt.xmax ?? Math.max(...xs); if (xmax === xmin) xmax = xmin + 1;
+  let ymin = opt.ymin, ymax = opt.ymax; if (ymax - ymin < 1e-9) { ymin -= 0.5; ymax += 0.5; }
+  const X = x => L + (x - xmin) / (xmax - xmin) * pw;
+  const Y = y => T + (1 - (Math.min(y, ymax) - ymin) / (ymax - ymin)) * ph;
+  const Y2 = y => T + (1 - (Math.max(Math.min(y, opt.y2max), opt.y2min) - opt.y2min) / (opt.y2max - opt.y2min)) * ph;
+  const tag = (txt, x, y, color, align) => {
+    const tw = ctx.measureText(txt).width, px = align === "right" ? x - tw : align === "center" ? x - tw / 2 : x;
+    ctx.fillStyle = "rgba(24,32,41,.82)"; ctx.fillRect(px - 2, y - F, tw + 4, F + 3); ctx.fillStyle = color; ctx.fillText(txt, px, y);
+  };
+  ctx.strokeStyle = css("--line"); ctx.lineWidth = 1;
+  for (const py of [T, T + ph]) { ctx.beginPath(); ctx.moveTo(L, py); ctx.lineTo(L + pw, py); ctx.stroke(); }
+  if (has2) { ctx.strokeStyle = css("--grad"); ctx.globalAlpha = .35; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(L, Y2(0)); ctx.lineTo(L + pw, Y2(0)); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; }
+  if (opt.hline != null) {
+    ctx.fillStyle = "rgba(255,77,79,.07)"; ctx.fillRect(L, T, pw, Y(opt.hline) - T);
+    ctx.strokeStyle = css("--tau"); ctx.setLineDash([5, 3]); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(L, Y(opt.hline)); ctx.lineTo(L + pw, Y(opt.hline)); ctx.stroke(); ctx.setLineDash([]);
+  }
+  for (const s of series) {
+    if (!s.y.length) continue;
+    ctx.globalAlpha = s.alpha ?? 1; ctx.strokeStyle = s.color; ctx.lineWidth = s.width || 1.4; ctx.setLineDash(s.dash || []);
+    ctx.beginPath(); const yf = s.axis === 2 ? Y2 : Y;
+    s.y.forEach((y, k) => { const px = X(s.x[k]), py = yf(y); k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+    ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+    if (opt.clipTop) s.y.forEach((y, k) => { if (y > ymax) { ctx.fillStyle = css("--bad"); ctx.fillText("▲", X(s.x[k]) - F / 2, T + F); } });
+  }
+  tag(fmt(ymax, opt.dec), L + 3, T + F + 1, css("--muted"), "left");
+  tag(fmt(ymin, opt.dec), L + 3, T + ph - 3, css("--muted"), "left");
+  if (has2) { tag(fmt(opt.y2max, opt.dec2), L + pw - 3, T + F + 1, css("--grad"), "right"); tag(fmt(opt.y2min, opt.dec2), L + pw - 3, T + ph - 3, css("--grad"), "right"); }
+  if (opt.hline != null) tag(opt.hline + "%", L + 3, Y(opt.hline) - 3, css("--tau"), "left");
+  if (opt.label) tag(opt.label, L + pw / 2, T + ph - 3, css("--muted"), "center");
+}
+
+let lastData = null, lastWinN = -1;
+function render(d) {
+  lastData = d;
+  document.getElementById("opState").textContent = "라우터 경로: " + (d.route_ko || "-") + (d.route ? ` 전문가` : "");
+  document.getElementById("meta").textContent =
+    `수신 ${d.n_received.toLocaleString()} 샘플 (${d.rx_hz} Hz) · 판정 ${d.n_windows}회 (이상 ${d.n_alert}) · ${d.host}`;
+  const sb = document.getElementById("srcBadge");
+  sb.textContent = `출처: ${d.source_ko || "-"} · ${d.accepting ? "수신 중" : "정지"}`;
+  sb.style.borderColor = d.source === "PCB" ? css("--ok") : (d.source || "").startsWith("PCB-EMU") ? css("--warn") : css("--line");
+  document.getElementById("legSrc").textContent = `기존 임계값 판정 (${d.legacy_src})`;
+  document.getElementById("rxTxt").textContent = d.latest ? `t = ${d.latest.t.toFixed(1)} s · ${d.rx_age_s != null && d.rx_age_s < 2 ? "수신 중" : "수신 대기"}` : "수신 대기";
+  if (d.latest) for (let k = 0; k < 4; k++) { tick(`bv${k}`, d.latest.v[k], 3); tick(`bi${k}`, d.latest.i, 3); tick(`bt${k}`, d.latest.temp[k], 2); }
+
+  document.getElementById("bufFill").style.width = (d.buf_len / d.window * 100) + "%";
+  document.getElementById("hopMark").style.left = d.buf_len < d.window ? "100%" : ((d.window - d.hop + d.since_hop) / d.window * 100) + "%";
+  document.getElementById("bufTxt").textContent = `${d.buf_len}/${d.window}`;
+  const left = d.buf_len < d.window ? d.window - d.buf_len : d.hop - d.since_hop;
+  document.getElementById("hopTxt").textContent = `다음 판정까지 ${left} 샘플 (${(left * 0.1).toFixed(1)} s) · 윈도우 = 최근 ${d.window} 샘플(${d.window / 10} s), ${d.hop} 샘플(${d.hop / 10} s)마다 판정`;
+  const hr = d.hist_routes || [], lastPred = d.win.length ? d.win[d.win.length - 1].pred : 0;
+  for (let k = 0; k < 12; k++) {
+    const s = document.getElementById(`slot${k}`), idx = k - (12 - hr.length);
+    s.className = "slot" + (idx >= 0 ? " " + hr[idx] + (idx === hr.length - 1 && lastPred ? " bad" : "") : "");
+  }
+  document.getElementById("histTxt").textContent = `${d.hist_len}/${d.hist_max}`;
+  if (d.n_windows !== lastWinN) { slots.classList.remove("flash"); void slots.offsetWidth; slots.classList.add("flash"); lastWinN = d.n_windows; }
+  document.getElementById("inferTxt").textContent = `판정 1회 ${d.infer_ms} ms`;
+
+  const tRel = d.t.length ? d.t.map(x => (x - d.t[d.t.length - 1]) / 60) : [];
+  const temps = d.temps.map(a => smooth(a, SMOOTH_PTS)), volts = d.volts.map(a => smooth(a, SMOOTH_PTS)), cur = smooth(d.packI, SMOOTH_PTS);
+  const [tLo, tHi] = pad(...extent(temps), 0.15, 1.0), [vLo, vHi] = pad(...extent(volts), 0.15, 0.02), [iLo, iHi] = pad(...extent([cur]), 0.15, 0.2);
+  const gV = d.grad_v.map(a => smooth(a, SMOOTH_PTS)), gT = d.grad_t.map(a => smooth(a, SMOOTH_GT)), gI = smooth(d.grad_i, SMOOTH_PTS);
+  const sym = (arrs, minAbs) => { const [lo, hi] = extent(arrs); const m = Math.max(Math.abs(lo), Math.abs(hi), minAbs) * 1.1; return [-m, m]; };
+  const [gvLo, gvHi] = sym(gV, 2.0), [gtLo, gtHi] = sym(gT, 0.5), [giLo, giHi] = sym([gI], 0.05);
+  const lw = d.win.length ? d.win[d.win.length - 1] : null;
+  for (let r = 0; r < 4; r++) {
+    const col = CELL_COLORS[r], grad = y => ({ x: tRel, y, color: css("--grad"), width: 1, alpha: .6, axis: 2 });
+    drawChart(`t${r}`, [grad(gT[r] || []), { x: tRel, y: temps[r] || [], color: col, width: 1.8 }], { ymin: tLo, ymax: tHi, dec: 1, y2min: gtLo, y2max: gtHi, dec2: 1 });
+    drawChart(`v${r}`, [grad(gV[r] || []), { x: tRel, y: volts[r] || [], color: col, width: 1.8 }], { ymin: vLo, ymax: vHi, dec: 3, y2min: gvLo, y2max: gvHi, dec2: 1 });
+    drawChart(`i${r}`, [grad(gI), { x: tRel, y: cur, color: css("--cur"), width: 1.8 }], { ymin: iLo, ymax: iHi, dec: 2, y2min: giLo, y2max: giHi, dec2: 2, label: r === 3 ? "최근 5분" : "" });
+    const v = volts[r] || [], t = temps[r] || [];
+    document.getElementById(`rv${r}`).textContent = v.length ? v[v.length - 1].toFixed(3) + " V" : "- V";
+    document.getElementById(`rt${r}`).textContent = t.length ? t[t.length - 1].toFixed(1) + " °C" : "- °C";
+    document.getElementById(`rs${r}`).textContent = lw ? `이상도 ${(lw.cell[r] * 100).toFixed(0)}%` : "이상도 -";
+    document.getElementById(`row${r}`).classList.toggle("alarm", d.status === "ABNORMAL" && d.fault_cell === r + 1);
+  }
+
+  const W = d.win.filter(w => w.t >= (d.win.length ? d.win[d.win.length - 1].t - 600 : 0));
+  const wx = W.map(w => (w.t - (W.length ? W[W.length - 1].t : 0)) / 60);
+  const series = [0, 1, 2, 3].map(k => ({ x: wx, y: W.map(w => w.cell[k] * 100), color: CELL_COLORS[k], width: 1.6 }));
+  series.push({ x: wx, y: W.map(w => w.pack * 100), color: css("--cur"), width: 1.2, dash: [4, 3] });
+  const top = Math.min(SCORE_CLIP, Math.max(150, ...W.flatMap(w => [...w.cell, w.pack]).map(p => p * 110)));
+  drawChart("cScore", series, { ymin: 0, ymax: top, dec: 0, hline: 100, clipTop: true, label: "분 (최신 = 오른쪽) · 점선 = 팩" });
+  document.getElementById("scoreTxt").textContent = lw ? `최대 ${(Math.max(...lw.cell, lw.pack) * 100).toFixed(0)}% · 100% 초과 = 이상` : "";
+
+  const lg = Object.keys(d.legacy.tripped);
+  const big = document.getElementById("status");
+  const cls = d.status;
+  big.className = cls;
+  document.getElementById("statusBig").textContent = cls;
+  document.getElementById("statusSmall").textContent = cls === "WAITING" ? `버퍼 채우는 중 (${d.buf_len}/100)`
+    : cls === "ABNORMAL" ? `고장 의심 셀: Cell ${d.fault_cell} · 경보 시각 ${fmt(d.alarm_t0, 1)} s` : "정상 운전 범위";
+  document.getElementById("aiTxt").textContent = cls === "ABNORMAL" ? `이상 (Cell ${d.fault_cell})` : cls === "NORMAL" ? "정상" : "대기";
+  document.getElementById("laneAI").className = "lane" + (cls === "ABNORMAL" ? " trip" : "");
+  document.getElementById("legTxt").textContent = lg.length ? lg.map(k => `${k} (${d.legacy.tripped[k].toFixed(1)} s)`).join(", ") : "정상 (보호 조건 미충족)";
+  document.getElementById("laneLegacy").className = "lane" + (lg.length ? " trip" : "");
+  document.getElementById("msgs").textContent = d.messages.slice(-3).join("\n");
+}
+
+async function sendCommand(cmd) {
+  try { await fetch("/api/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmd }) }); } catch (e) {}
+}
+async function poll() {
+  try { const r = await fetch("/api/state", { cache: "no-store" }); if (!r.ok) throw new Error(r.status); render(await r.json()); }
+  catch (e) { const s = document.getElementById("status"); s.className = "OFFLINE"; document.getElementById("statusBig").textContent = "OFFLINE"; document.getElementById("statusSmall").textContent = "모니터 서버 응답 없음"; }
+  finally { setTimeout(poll, POLL_MS); }
+}
+window.addEventListener("resize", () => lastData && render(lastData));
+poll();
+</script>
+</body>
+</html>

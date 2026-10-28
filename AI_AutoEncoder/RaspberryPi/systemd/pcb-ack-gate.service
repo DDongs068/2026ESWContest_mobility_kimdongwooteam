@@ -1,0 +1,13 @@
+[Unit]
+Description=Mac UDP 5002 -> PCB check (ACK) -> receiver 127.0.0.1:5013
+After=network.target
+Before=pcb-receiver-abnormal.service
+
+[Service]
+WorkingDirectory=/home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/relay
+ExecStart=/usr/bin/python3 -u /home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/relay/ack_gate.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

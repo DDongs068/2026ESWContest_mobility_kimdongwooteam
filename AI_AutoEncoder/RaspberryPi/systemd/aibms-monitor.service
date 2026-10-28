@@ -1,0 +1,12 @@
+[Unit]
+Description=AE monitor: AI_AutoEncoder model on Raspberry Pi (UDP 5005 -> 1 s decision -> web UI 8050)
+After=network.target
+
+[Service]
+WorkingDirectory=/home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/monitor
+ExecStart=/usr/bin/python3 -u /home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/monitor/monitor_server.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

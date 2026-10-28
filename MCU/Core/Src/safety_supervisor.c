@@ -11,9 +11,6 @@ static uint32_t evaluate(void)
     BMS_Status b=g_bms;
     const uint8_t sm[3]={0xFC,0xF7,0xF6},pm[4]={0xDF,0x9F,0xFF,0x01};
     uint32_t reasons=0,now=HAL_GetTick();
-    /* Fail closed if critical protection or its FET action is disabled.
-     * Required A: SCD/OCD1/OCC/COV/CUV; B: OTD/OTC/UTD/UTC.
-     * No thresholds/enables/maps are automatically rewritten. */
     BQ_ProtectionProfile profile=g_safety.profile;
     if (!g_safety.profile_valid || g_safety.profile_result ||
         (profile.enabled[0]&0xBCu)!=0xBCu || (profile.enabled[1]&0x33u)!=0x33u ||
@@ -38,7 +35,6 @@ static uint32_t evaluate(void)
     if (HAL_GPIO_ReadPin(ESTOP_OK_GPIO_Port,ESTOP_OK_Pin)!=GPIO_PIN_SET) reasons|=SAFE_EST0P;
     if (HAL_GPIO_ReadPin(M1_FAULTN_GPIO_Port,M1_FAULTN_Pin)!=GPIO_PIN_SET ||
         HAL_GPIO_ReadPin(M2_FAULTN_GPIO_Port,M2_FAULTN_Pin)!=GPIO_PIN_SET) reasons|=SAFE_DRIVER;
-    /* Plausibility only. Real COV/CUV/OCD/OT setpoints remain the BMIC's RAM/OTP profile. */
     if (b.data_valid && !b.sample_result) {
         if (b.sensor.ntc_valid_mask!=15u || !isfinite(b.sensor.current_A) ||
             !isfinite(b.sensor.stack_V) || b.sensor.stack_V<0 || b.sensor.stack_V>24) reasons|=SAFE_SENSOR;
@@ -75,7 +71,7 @@ void Safety_Update(void)
     if (HAL_GetTick()-g_safety.profile_tick>=5000u) Safety_RefreshProfile();
     g_safety.active=evaluate(); g_safety.last_tick=HAL_GetTick();
     if (g_safety.ack) { g_safety.ack=0; (void)Safety_Rearm(); }
-    if (g_safety.active) g_balance.enable=0; /* No autonomous balancing on unknown protection/sensors. */
+    if (g_safety.active) g_balance.enable=0;
     int requested=g_control.step7_2 || g_control.step7_3 || g_control.motor_on ||
                   g_control.all_on || g_charge.on || g_balance.start;
     int powered=g_bms.stage || g_bms.power_gpio_mask || g_charge.command_enabled || g_balance.running;
@@ -84,7 +80,6 @@ void Safety_Update(void)
             ++g_safety.event_count; g_safety.first_trip_tick=g_safety.last_tick;
         }
         g_safety.latched|=g_safety.active;
-        /* Drop physical GPIO/PWM immediately, before any subsequent I2C work. */
         Board_ForceSafeOutputs(); g_bms.stage=0; g_bms.power_gpio_mask=0;
         g_control.off=1;
     }
@@ -94,6 +89,5 @@ void Safety_Update(void)
         if (requested) g_control.off=1;
         g_control.step7_2=g_control.step7_3=g_control.motor_on=g_control.all_on=0;
         g_charge.on=0; g_balance.start=g_balance.enable=0;
-        /* The BMS OFF path consumes off and makes one BMIC OFF attempt. No blind retry. */
     }
 }

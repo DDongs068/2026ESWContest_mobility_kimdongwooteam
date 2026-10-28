@@ -1,7 +1,6 @@
 #include "main.h"
 #include "stm32g4xx_it.h"
 
-/* Exception vectors are required; none requests an MCU reset. */
 void NMI_Handler(void)        { Platform_FatalFault(2); }
 void HardFault_Handler(void)  { Platform_FatalFault(3); }
 void MemManage_Handler(void)  { Platform_FatalFault(4); }

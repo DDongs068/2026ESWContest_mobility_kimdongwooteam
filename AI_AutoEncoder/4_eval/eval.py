@@ -1,20 +1,3 @@
-"""
-eval.py — AE 평가: fault3 (위험 soft ISC 60 run + 같은 프로파일 정상 60 run) · 정상 test split
-
-판정 (1 s 마다): 라우터(Ī) → 해당 전문가 셀 AE·팩 AE 복원오차 / τ → 하나라도 > 1 이면 이상
-                 + 과충전 사양 규칙 (윈도우 최대셀 전압 중앙값 > 4.205 V)
-지표:
-    윈도우 confusion matrix (label ≥ 0) · recall · 오경보율
-    fault3 정상 구간 오경보 사건/h · 경보 켜진 시간 %
-    ISC 탐지 run 수 · 탐지 지연 (고장 시작 → 첫 경보) 중앙/최대 · 고장 후 탐지율 · 위치(셀) 정답률
-    하드웨어 보호 대비: 보호(COV/CUV/OCD/OT)가 동작한 ISC run 에서 AE 가 먼저 경보한 비율 · 선행 시간
-    정상 test split 오경보 사건/h
-데이터: summary_fault3 (온도에 실측 센서 특성 반영), summary_fault3_clean (원본 온도), summary_normal (test split)
-Output: 4_eval/results/results.txt, compare.csv
-Usage:
-    python 4_eval/eval.py
-"""
-
 import json
 import os
 import sys
@@ -22,13 +5,12 @@ import sys
 import numpy as np
 import pandas as pd
 
-AI_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))     # AI_AutoEncoder/
+AI_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(AI_DIR, "3_model"))
 
-from model import Expert, get_device, set_seed, SPEC_V        # noqa: E402
-from router import routed_history, route_of, EXPERTS          # noqa: E402
+from model import Expert, get_device, set_seed, SPEC_V
+from router import routed_history, route_of, EXPERTS
 
-# ===== 경로 / 상수 =====
 DATA_DIR: str = os.path.join(AI_DIR, "data")
 WEIGHTS_DIR: str = os.path.join(AI_DIR, "5_weights", "AE")
 RES_DIR: str = os.path.join(AI_DIR, "4_eval", "results")
@@ -37,7 +19,6 @@ WIN_S: float = 1.0
 
 
 def load(name: str) -> tuple[np.ndarray, pd.DataFrame]:
-    """data/summary_<name>.npz + meta."""
     try:
         return np.load(os.path.join(DATA_DIR, f"summary_{name}.npz"))["S"], pd.read_csv(os.path.join(DATA_DIR, f"meta_{name}.csv"))
     except OSError as e:
@@ -45,14 +26,13 @@ def load(name: str) -> tuple[np.ndarray, pd.DataFrame]:
 
 
 def predict(S: np.ndarray, meta: pd.DataFrame, experts: dict, thr: dict) -> pd.DataFrame:
-    """1 s 윈도우마다 판정.  S (N, 13) → meta + route / ratio / pred / cell_guess / t_end"""
-    H = routed_history(S, meta, reset=True)                                  # (N, 12, 13)
+    H = routed_history(S, meta, reset=True)
     route = route_of(H)
     sc, sp = np.zeros((len(H), 4), np.float32), np.zeros(len(H), np.float32)
     for r, ex in experts.items():
         m = route == r
         if m.any():
-            sc[m], sp[m] = ex.scores(H[m])                                   # (n, 4), (n,)
+            sc[m], sp[m] = ex.scores(H[m])
     df = meta.copy()
     df["route"] = route
     tc = np.array([thr[r]["cell"] for r in route]); tp = np.array([thr[r]["pack"] for r in route])
@@ -64,12 +44,10 @@ def predict(S: np.ndarray, meta: pd.DataFrame, experts: dict, thr: dict) -> pd.D
 
 
 def events(c: np.ndarray) -> int:
-    """경보 사건 수 (정상 → 이상 전환)."""
     return int((c[1:] & ~c[:-1]).sum() + c[:1].sum())
 
 
 def confusion(df: pd.DataFrame) -> dict:
-    """윈도우 단위 confusion (label ≥ 0)."""
     y, p = df["label"].to_numpy(), df["pred"].to_numpy()
     tn, fp = int(((y == 0) & (p == 0)).sum()), int(((y == 0) & (p == 1)).sum())
     fn, tp = int(((y == 1) & (p == 0)).sum()), int(((y == 1) & (p == 1)).sum())
@@ -78,7 +56,6 @@ def confusion(df: pd.DataFrame) -> dict:
 
 
 def fault3_metrics(df: pd.DataFrame) -> dict:
-    """fault3 run 단위: 정상 구간 오경보 + ISC 탐지 + 하드웨어 보호 대비."""
     ev, secs, on_s, delays, post, cell_ok, lead, hw_runs, ae_first = 0, 0.0, 0.0, [], [], [], [], 0, 0
     for _, g in df.groupby("SimulationID"):
         g = g.sort_values("WindowStart_s")
@@ -96,7 +73,7 @@ def fault3_metrics(df: pd.DataFrame) -> dict:
             cell_ok.append(int(g["cell_guess"].iloc[hit[0]] == g["fault_cell"].iloc[0]))
         post.append(c[g["WindowStart_s"].to_numpy() >= onset].mean())
         trip = float(g["trip_s"].iloc[0])
-        if np.isfinite(trip) and trip >= onset:                              # 고장 후 하드웨어 보호가 동작한 run
+        if np.isfinite(trip) and trip >= onset:
             hw_runs += 1
             ae_first += int(t_ae < trip)
             if t_ae < trip:
@@ -109,7 +86,6 @@ def fault3_metrics(df: pd.DataFrame) -> dict:
 
 
 def normal_test_fa(df: pd.DataFrame) -> float:
-    """정상 test split: 오경보 사건/h."""
     ev, secs = 0, 0.0
     for _, g in df.groupby("SimulationID"):
         c = g.sort_values("WindowStart_s")["pred"].to_numpy().astype(bool)
@@ -118,9 +94,8 @@ def normal_test_fa(df: pd.DataFrame) -> float:
 
 
 def main() -> None:
-    """평가 메인."""
     set_seed(SEED)
-    device = get_device()                                                    # MPS → CUDA → CPU
+    device = get_device()
     try:
         with open(os.path.join(WEIGHTS_DIR, "threshold.json"), encoding="utf-8") as f:
             thr = json.load(f)["experts"]

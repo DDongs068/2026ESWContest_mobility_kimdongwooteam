@@ -1,0 +1,13 @@
+[Unit]
+Description=Normal data -> live LibreOffice Calc buffer (10 rows)
+After=graphical-session.target
+
+[Service]
+WorkingDirectory=/home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/relay
+Environment=WAYLAND_DISPLAY=wayland-0
+ExecStart=/usr/bin/python3 -u /home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/relay/calc_buffer.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

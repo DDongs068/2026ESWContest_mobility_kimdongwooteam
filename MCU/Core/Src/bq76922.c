@@ -1,11 +1,6 @@
 #include "bq76922.h"
 #include <string.h>
 
-/* BQ76922 SLUUCG7: 7-bit address 0x08, no I2C CRC.
- * Synchronous main-loop driver; the MAC transfer buffer has a single owner.
- * Errors: -1 HAL I/O, -2 completion/echo, -3 length, -4 checksum,
- *         -5 readback, -6 incompatible NTC setting, -7 argument.
- * Configuration changes are RAM-only. */
 volatile uint32_t bq_i2c_ok, bq_i2c_errors, bq_last_hal_error;
 volatile int bq_last_error;
 static I2C_HandleTypeDef *bq_bus;
@@ -84,8 +79,6 @@ static int wait_echo(uint16_t address)
     return result(-2);
 }
 
-/* The checksum covers address + the entire returned buffer, not just the
- * requested field. Data-memory reads may populate all 32 transfer bytes. */
 static int memory_read(uint16_t address, uint8_t *out, uint8_t count)
 {
     uint8_t data[32], total, checksum, sum, size;
@@ -112,7 +105,6 @@ static int memory_write(uint16_t address, uint8_t count, uint32_t value)
         data[i] = (uint8_t)(value >> (8u * i));
         sum = (uint8_t)(sum + data[i]);
     }
-    /* Let the address request finish populating old data before replacing it. */
     if (command(address) || wait_echo(address)) return bq_last_error;
     trailer[0] = (uint8_t)(sum ^ 0xFFu);
     trailer[1] = (uint8_t)(count + 4u);
@@ -136,7 +128,6 @@ static int wait_config(uint16_t expected)
 
 static int is_ntc(uint8_t config)
 {
-    /* Thermistor mode, a temperature measurement type, a polynomial and pullup. */
     return (config & 3u) == 3u && (config & 12u) != 0u &&
            (config & 48u) != 48u && (config & 192u) < 128u;
 }
@@ -162,30 +153,29 @@ int BQ_Configure(void)
     uint8_t ntc[4], data[2], da;
     uint16_t status, power;
     uint32_t gain_bits, capacity_bits;
-    float gain = 7.4768f / 10.0f; /* Nominal 10-milliohm board shunt. */
+    float gain = 7.4768f / 10.0f;
     float capacity = (float)((double)gain * 298261.6178);
     int error = 0;
 
     if (sizeof(float) != 4u) return result(-7);
     if (read_word(0x12u, &status)) return bq_last_error;
-    /* Complete setup even if an MCU-only reset left the BMIC in CFGUPDATE. */
     if (!(status & 1u) && (command(0x0090u) || wait_config(1u))) {
         error = bq_last_error;
         goto finish;
     }
     for (unsigned i = 0u; i < 4u; ++i) {
         if (memory_read(ntc_address[i], &ntc[i], 1u)) { error = bq_last_error; goto finish; }
-        if ((ntc[i] & 3u) == 0u) ntc[i] = 0x0Bu; /* 18K model, reported only. */
+        if ((ntc[i] & 3u) == 0u) ntc[i] = 0x0Bu;
         else if (!is_ntc(ntc[i])) { error = -6; goto finish; }
     }
     if (memory_read(0x9234u, data, 2u)) { error = bq_last_error; goto finish; }
-    power = (uint16_t)((u16(data) | 0x1000u) & 0xFEFFu); /* TS2 thermistor, SLEEP off. */
+    power = (uint16_t)((u16(data) | 0x1000u) & 0xFEFFu);
     if (memory_read(0x9303u, &da, 1u)) { error = bq_last_error; goto finish; }
-    da = (uint8_t)((da & 0xF8u) | 5u); /* 1mA/userA and 10mV/userV. */
+    da = (uint8_t)((da & 0xF8u) | 5u);
     memcpy(&gain_bits, &gain, 4u);
     memcpy(&capacity_bits, &capacity, 4u);
-    if (memory_write(0x92FBu, 1u, 0x42u) || /* DFETOFF: active-high BOTHOFF. */
-        memory_write(0x9304u, 2u, 0x0017u) || /* Physical cells: channels 1,2,3,5. */
+    if (memory_write(0x92FBu, 1u, 0x42u) ||
+        memory_write(0x9304u, 2u, 0x0017u) ||
         memory_write(0x9303u, 1u, da) ||
         memory_write(0x9234u, 2u, power) ||
         memory_write(0x91A8u, 4u, gain_bits) ||
@@ -197,10 +187,9 @@ int BQ_Configure(void)
         if (memory_write(ntc_address[i], 1u, ntc[i])) { error = bq_last_error; break; }
     }
 finish:
-    /* Always attempt to resume normal BMIC operation after a partial setup. */
     if (command(0x0092u) || wait_config(0u)) return bq_last_error;
     if (error) return result(error);
-    if (command(0x009Au)) return bq_last_error; /* Disable SLEEP for periodic measurements. */
+    if (command(0x009Au)) return bq_last_error;
     return result(0);
 }
 
@@ -245,7 +234,7 @@ int BQ_Read(BQ_Data *data)
         if (read_bytes((uint8_t)(0x0Bu + 2u * i), &value.pf_status[i], 1u)) return bq_last_error;
     }
     if (read_word(0x12u, &value.battery_status)) return bq_last_error;
-    *data = value; /* A failed transfer leaves the caller's previous sample intact. */
+    *data = value;
     return result(0);
 }
 
@@ -254,7 +243,6 @@ int BQ_EnableFETs(void)
     uint8_t data[2];
     if (memory_read(0x0057u, data, 2u)) return bq_last_error;
     if (!(u16(data) & 0x10u)) {
-        /* FET_ENABLE toggles FET_EN; do not send it blindly or retry blindly. */
         if (command(0x0022u) || memory_read(0x0057u, data, 2u)) return bq_last_error;
         if (!(u16(data) & 0x10u)) return result(-5);
     }
@@ -294,7 +282,6 @@ int BQ_BalanceSet(uint16_t mask)
         write_bytes(0x40u, data, 2u) || write_bytes(0x60u, trailer, 2u))
         return bq_last_error;
     HAL_Delay(2u);
-    /* CB_ACTIVE_CELLS can take about1s to change; poll separately. */
     return result(0);
 }
 

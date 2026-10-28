@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>입력 버퍼 시트</title>
+<style>
+  :root { --bg:#f3f3f3; --sheet:#ffffff; --grid:#d4d4d4; --head:#e9e9e9; --text:#1f1f1f; --muted:#6b6b6b;
+          --up:#d93025; --down:#1a73e8; --sel:#107c41; --bad:#d93025; --ok:#107c41; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:"Segoe UI", -apple-system, "Noto Sans CJK KR", "NanumGothic", sans-serif; }
+  body { display:grid; grid-template-rows:auto auto 1fr; height:100vh; }
+  .ribbon { background:var(--sel); color:#fff; padding:6px 14px; display:flex; align-items:center; gap:14px; }
+  .ribbon h1 { font-size:17px; margin:0; font-weight:600; }
+  .ribbon .file { font-size:13px; opacity:.9; }
+  .ribbon .src { margin-left:auto; font-size:13px; background:rgba(255,255,255,.18); padding:2px 10px; border-radius:10px; }
+  .bar { display:flex; gap:16px; align-items:center; padding:6px 14px; background:#fff; border-bottom:1px solid var(--grid); font-size:14px; }
+  .bar b { font-variant-numeric:tabular-nums; }
+  .gauge { width:260px; height:14px; border:1px solid var(--grid); border-radius:3px; position:relative; background:#fafafa; }
+  .gauge i { position:absolute; inset:0 auto 0 0; background:#21a366; }
+  .gauge s { position:absolute; top:-2px; bottom:-2px; width:2px; background:#f9ab00; }
+  .verdict { margin-left:auto; padding:3px 12px; border-radius:4px; font-weight:700; }
+  .verdict.NORMAL { color:var(--ok); border:1px solid var(--ok); } .verdict.ABNORMAL { color:#fff; background:var(--bad); }
+  .wrap { overflow:auto; padding:0 0 0 0; position:relative; }
+  table { border-collapse:collapse; background:var(--sheet); font-size:13px; font-variant-numeric:tabular-nums; }
+  th, td { border:1px solid var(--grid); padding:1px 8px; height:20px; white-space:nowrap; }
+  thead th { position:sticky; top:0; background:var(--head); color:var(--muted); font-weight:500; z-index:2; }
+  thead tr.names th { top:22px; color:var(--text); font-weight:600; }
+  th.rn { position:sticky; left:0; background:var(--head); color:var(--muted); font-weight:400; text-align:center; min-width:40px; z-index:1; }
+  thead th.rn { z-index:3; }
+  td { text-align:right; font-family:"Consolas", "SF Mono", Menlo, monospace; transition:background-color .3s; }
+  td.up { color:var(--up); background:#fde7e6; } td.down { color:var(--down); background:#e3edfd; }
+  tr.newest td { background:#e8f5e9; } tr.newest td.up { background:#fde7e6; } tr.newest td.down { background:#e3edfd; }
+  tr.hopline td, tr.hopline th { border-top:2px dashed #f9ab00; }
+  table.flash { outline:3px solid var(--sel); outline-offset:-1px; }
+  table.flash.bad { outline-color:var(--bad); }
+  .empty td { color:#bbb; }
+  .foot { font-size:12px; color:var(--muted); padding:4px 14px; }
+</style>
+</head>
+<body>
+<div class="ribbon">
+  <h1>AI 입력 버퍼</h1><span class="file" id="file">window_buffer.csv</span>
+  <span class="src" id="src">출처 -</span>
+</div>
+<div class="bar">
+  <span>버퍼 <b id="fill">0/10</b></span>
+  <div class="gauge"><i id="g"></i><s id="hop"></s></div>
+  <span>다음 판정까지 <b id="left">-</b></span>
+  <span>수신 <b id="nrx">0</b> 샘플 · 판정 <b id="nwin">0</b>회</span>
+  <span class="verdict" id="verdict">대기</span>
+</div>
+<div class="wrap" id="wrap">
+  <table id="sheet"><thead id="thead"></thead><tbody id="tbody"></tbody></table>
+</div>
+<script>
+"use strict";
+let N = 10; const POLL_MS = 100;
+const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const DEC = { seq: 0, ms: 0, valid: 0, I: 3, STACK: 2, PACK: 2, LD: 2 };
+const decOf = c => DEC[c] ?? (/^V\d$/.test(c) ? 3 : /^T\d$/.test(c) ? 1 : 3);
+const NOCOMPARE = new Set(["seq", "ms", "valid"]);
+let cols = null, lastRows = [], lastN = -1, lastWin = -1;
+
+function build(c) {
+  cols = c;
+  document.getElementById("thead").innerHTML =
+    `<tr><th class="rn"></th>${c.map((_, j) => `<th>${LETTERS[j]}</th>`).join("")}</tr>` +
+    `<tr class="names"><th class="rn">1</th>${c.map(x => `<th>${x}</th>`).join("")}</tr>`;
+  let html = "";
+  for (let i = 0; i < N; i++) html += `<tr id="r${i}" class="empty"><th class="rn">${i + 2}</th>${c.map((_, j) => `<td id="c${i}_${j}"></td>`).join("")}</tr>`;
+  document.getElementById("tbody").innerHTML = html;
+}
+
+function render(d) {
+  if (!cols || N !== d.window) { N = d.window; build(d.cols); }
+  const rows = d.rows, n = rows.length;
+  const prevByT = new Map(lastRows.map(r => [r[0], r]));
+  const prevLast = lastRows.length ? lastRows[lastRows.length - 1] : null;
+  for (let i = 0; i < N; i++) {
+    const tr = document.getElementById(`r${i}`);
+    const r = rows[i];
+    tr.className = r ? (i === n - 1 ? "newest" : "") : "empty";
+    if (i === N - d.hop && n === N) tr.classList.add("hopline");
+    for (let j = 0; j < cols.length; j++) {
+      const td = document.getElementById(`c${i}_${j}`);
+      if (!r) { td.textContent = ""; td.className = ""; continue; }
+      const v = r[j], dec = decOf(cols[j]);
+      td.textContent = v.toFixed(dec);
+      const above = i > 0 ? rows[i - 1] : prevByT.get(r[0] - 0.1) || null;
+      let cls = "";
+      if (!NOCOMPARE.has(cols[j]) && above) { const dv = v - above[j], eps = Math.pow(10, -dec) / 2; cls = dv > eps ? "up" : dv < -eps ? "down" : ""; }
+      td.className = cls;
+    }
+  }
+  lastRows = rows;
+  document.getElementById("fill").textContent = `${n}/${N}`;
+  document.getElementById("g").style.width = (n / N * 100) + "%";
+  document.getElementById("hop").style.left = n < N ? "100%" : ((N - d.hop + d.since_hop) / N * 100) + "%";
+  const left = n < N ? N - n : d.hop - d.since_hop;
+  document.getElementById("left").textContent = `${left} 샘플 (${(left * 0.1).toFixed(1)} s)`;
+  document.getElementById("nrx").textContent = d.n_received.toLocaleString();
+  document.getElementById("nwin").textContent = d.n_windows;
+  document.getElementById("src").textContent = `출처: ${d.source_ko || "-"} · ${d.accepting ? "수신 중" : "정지"} · ${d.mode === "normal" ? "정상 모드" : "비정상 모드"}`;
+  document.getElementById("file").textContent = d.last_file ? `마지막 판정 윈도우: ${d.last_file}` : "window_buffer.csv";
+  const v = document.getElementById("verdict"), ld = d.last_decision;
+  if (ld) {
+    v.className = "verdict " + ld.status;
+    v.textContent = `판정 #${ld.n}: ${ld.status === "ABNORMAL" ? `이상 (셀 ${ld.fault_cell || "-"}, ${ld.max_pct}%)` : `정상 (${ld.max_pct}%)`}`;
+  } else { v.className = "verdict"; v.textContent = "판정 대기"; }
+  if (d.n_windows !== lastWin && lastWin >= 0) {
+    const t = document.getElementById("sheet");
+    t.classList.remove("flash", "bad"); void t.offsetWidth;
+    t.classList.add("flash"); if (ld && ld.status === "ABNORMAL") t.classList.add("bad");
+    setTimeout(() => t.classList.remove("flash", "bad"), 700);
+  }
+  lastWin = d.n_windows;
+  const w = document.getElementById("wrap");
+  if (n !== lastN) { w.scrollTop = w.scrollHeight; lastN = n; }
+}
+
+async function poll() {
+  try { const r = await fetch("/api/buffer", { cache: "no-store" }); render(await r.json()); }
+  catch (e) { document.getElementById("src").textContent = "모니터 서버 응답 없음"; }
+  setTimeout(poll, POLL_MS);
+}
+poll();
+</script>
+</body>
+</html>

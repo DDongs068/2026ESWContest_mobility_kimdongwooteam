@@ -16,8 +16,6 @@ static int32_t Clamp(int32_t value)
 }
 static int ProtectionFault(void)
 {
-    /* BQ76922 SLUUCG7, Safety/PF Status registers (not Alert registers).
-     * Ignore reserved bits. This indication never changes power outputs. */
     return (g_bms.sensor.safety_status[0] & 0xFCu) ||
            (g_bms.sensor.safety_status[1] & 0xF7u) ||
            (g_bms.sensor.safety_status[2] & 0xF6u) ||
@@ -39,7 +37,6 @@ static int BalanceAllowed(void)
         return -23;
     for (unsigned i=0;i<4u;++i) {
         float v=g_bms.sensor.cell_V[i], t=g_bms.sensor.temp_C[i];
-        /* User-selected balancing floor: stop below2.7V per cell. */
         if (!isfinite(v) || v<2.7f || v>4.2f ||
             !isfinite(t) || t<0.0f || t>45.0f) return -23;
     }
@@ -139,7 +136,6 @@ static void BalanceUpdate(int cancelled)
         g_balance.status_result=BQ_BalanceStatus(&mask,&seconds);
         if (!g_balance.status_result) {
             g_balance.active_mask=mask;
-            /* Retain the observed BMIC time after stopping for the demo. */
             if (g_balance.running && seconds>g_balance.elapsed_s) g_balance.elapsed_s=seconds;
             g_balance.status_tick=HAL_GetTick();
             if (mask && mask==g_balance.requested_mask) g_balance.activation_seen=1;
@@ -166,8 +162,6 @@ static int ChargeAllowed(void)
 }
 static void ChargeUpdate(int cancelled)
 {
-    /* These three pins remain INPUTS. Their LEDs are driven by BQ24610.
-     * Never force STAT1/STAT2/PG to fake a charging indication. */
     g_charge.stat1_n=HAL_GPIO_ReadPin(CHG_STAT1_GPIO_Port,CHG_STAT1_Pin)==GPIO_PIN_SET;
     g_charge.stat2_n=HAL_GPIO_ReadPin(CHG_STAT2_GPIO_Port,CHG_STAT2_Pin)==GPIO_PIN_SET;
     g_charge.pg_n=HAL_GPIO_ReadPin(CHG_PG_GPIO_Port,CHG_PG_Pin)==GPIO_PIN_SET;
@@ -220,12 +214,11 @@ static void Configure(void)
     LoadsOff();
     g_bms.data_valid = 0;
     g_bms.configure_result = BQ_Configure();
-    if (!g_bms.configure_result) HAL_Delay(1200u); /* First NORMAL conversions. */
+    if (!g_bms.configure_result) HAL_Delay(1200u);
     id_result = BQ_ReadID(&id);
     g_bms.device_id = id;
     if (!g_bms.configure_result) g_bms.configure_result = id_result;
     g_bms.setup_ok = g_bms.configure_result == 0;
-    /* Establish the host OFF latch AFTER CFGUPDATE. */
     g_bms.fet_off_result = BQ_DisableFETs();
     last_sample = HAL_GetTick() - 100u;
 }
@@ -240,8 +233,6 @@ void BMS_App_Init(I2C_HandleTypeDef *bus)
     BQ_Init(bus);
     Configure();
 }
-/* Remote commands never bypass BMIC protection or the physical ESTOP gate.
- * Existing Live Expressions triggers keep their original meanings. */
 static int RemoteMotorAllowed(void)
 {
     if (g_control.ai_alarm || g_control.off || g_control.configure || g_control.motor_off)
@@ -260,7 +251,7 @@ int BMS_RemoteMotorOn(void)
     g_control.motor_on = 1u;
     remote_motor_start = 1u;
     g_bms.remote_motor_result = 1;
-    return 0; /* Queued, not proof of PWM/rotation. */
+    return 0;
 }
 void BMS_App_Update(void)
 {
@@ -272,8 +263,6 @@ void BMS_App_Update(void)
     int cancel_charge=g_control.off || g_control.ai_alarm || g_control.configure ||
         g_control.motor_on || g_control.all_on;
     ++g_bms.heartbeat;
-    /* AI alarm holds the existing full OFF path and cancels pending ONs.
-     * One BMIC OFF attempt per AI event; explicit OFF can request another. */
     if (!g_control.ai_alarm) ai_stop_applied = 0u;
     if (g_control.off || g_control.ai_alarm) {
         int send_off = g_control.off || !ai_stop_applied;
@@ -294,7 +283,6 @@ void BMS_App_Update(void)
             remote_motor_start = 0;
             g_control.motor_on = 0;
             int rc = RemoteMotorAllowed();
-            /* Cancel charge and balancing before enabling any load power. */
             g_balance.start = g_balance.enable = 0;
             if (g_balance.running || g_balance.active_mask || g_balance.stop_pending) {
                 BalanceStop(-21);
@@ -311,7 +299,7 @@ void BMS_App_Update(void)
                 g_control.motor_on = 1u;
             } else {
                 LoadsOff();
-                g_control.off = 1u; /* Cleanup any partially accepted FET command. */
+                g_control.off = 1u;
             }
         }
         if (g_control.step7_2 && !g_control.off) {
@@ -338,7 +326,6 @@ void BMS_App_Update(void)
             g_control.all_on = g_control.motor_on = 0;
             g_bms.last_action = 100;
             ++g_bms.action_count;
-            /* No FET command or BMS_ALLOW write: complete step 7 manually. */
             HAL_GPIO_WritePin(MOTOR_CMD_GPIO_Port, MOTOR_CMD_Pin, GPIO_PIN_RESET);
             Board_MotorSet(0, 0);
             HAL_GPIO_WritePin(DCDC_CMD_GPIO_Port, DCDC_CMD_Pin, GPIO_PIN_SET);
@@ -358,7 +345,6 @@ void BMS_App_Update(void)
         if (g_bms.stage == 3)
             Board_MotorSet(Clamp(g_control.motor1_permille), Clamp(g_control.motor2_permille));
     }
-    /* Continuous sensing. Communication errors update status only. */
     if (now - last_sample >= 100u) {
         last_sample = now;
         g_bms.data_valid = 0;
@@ -370,7 +356,6 @@ void BMS_App_Update(void)
             g_bms.data_valid = 1;
         } else ++g_bms.error_count;
     }
-    /* Status and LEDs only: no automatic changes to GPIO/PWM power commands. */
     g_bms.estop_ok = HAL_GPIO_ReadPin(ESTOP_OK_GPIO_Port, ESTOP_OK_Pin) == GPIO_PIN_SET;
     g_bms.converter_pg = HAL_GPIO_ReadPin(CONVERTER_PG_GPIO_Port, CONVERTER_PG_Pin) == GPIO_PIN_SET;
     g_bms.motor_fault_mask =

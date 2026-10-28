@@ -70,7 +70,7 @@ static void MX_I2C1_Init(void)
 {
 
   hi2c1.Instance = I2C1;
-  
+
   hi2c1.Init.Timing = 0x10921E2F;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
@@ -133,12 +133,11 @@ static void MX_GPIO_Init(void)
 
   GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  /* PC8 is shorted to PC7 (M2_DIR); keep PC8 high-Z. */
   GPIO_InitStruct.Pin = GPIO_PIN_8 | GPIO_PIN_12;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
   GPIO_InitStruct.Pin = GPIO_PIN_2;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-  
+
 }
 
 void Board_ForceSafeOutputs(void)
@@ -170,10 +169,6 @@ void Board_MotorSet(int32_t m1, int32_t m2)
     TIM2->CR1=TIM_CR1_ARPE|TIM_CR1_CEN;
     previous1=0; previous2=0;
   }
-  /* CEN alone does not prove that both outputs are configured. Reapply the
-   * PA0/PA1 TIM2 AF1 and CH1/CH2 PWM settings even when the timer is running,
-   * so a disabled CH2 or lost PA1 pin mux cannot silently discard motor2 duty.
-   * Keep CH3/CH4 and all unrelated GPIO pins unchanged. */
   TIM2->CCMR1=(TIM2->CCMR1&~0xFFFFu)|(6u<<4)|(1u<<3)|(6u<<12)|(1u<<11);
   GPIOA->AFR[0]=(GPIOA->AFR[0]&~255u)|0x11u;
   GPIOA->OTYPER&=~3u;
@@ -191,8 +186,6 @@ void Board_MotorSet(int32_t m1, int32_t m2)
   g_motor.pwm_hz = 20000u;
 }
 
-/* SPI1: PCB U3 pins19/20/21 = PA5 SCK / PA6 MISO / PA7 MOSI.
- * HSI16 / 8 = 2MHz, mode0, 8-bit. No IRQ/DMA or HAL SPI dependency. */
 void Board_EthernetReset(void)
 {
     GPIO_InitTypeDef gpio = {0};
@@ -238,11 +231,10 @@ int Board_EthernetTransfer(uint16_t address, uint8_t block, int write,
     return 0;
 fail:
     HAL_GPIO_WritePin(W5500_SCSN_GPIO_Port, W5500_SCSN_Pin, GPIO_PIN_SET);
-    SPI1->CR1 &= ~SPI_CR1_SPE; /* Next explicit/retry init resets SPI + W5500. */
+    SPI1->CR1 &= ~SPI_CR1_SPE;
     return -1;
 }
 
-/* CPU/setup faults stop for inspection; they never request a reset. */
 __NO_RETURN void Platform_FatalFault(uint32_t fault_id)
 {
     __disable_irq();

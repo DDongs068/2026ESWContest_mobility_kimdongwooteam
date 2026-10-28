@@ -1,20 +1,3 @@
-"""
-np_model.py — torch 없이 numpy 만으로 AE 추론 (Raspberry Pi 5 배포용, model.Expert 와 같은 인터페이스)
-
-FlowAE (MLP) 순전파를 numpy 로 그대로 계산:
-    flatten → Linear → SiLU → Linear → SiLU → Linear(latent) → Linear → SiLU → Linear → SiLU → Linear → reshape
-    SiLU(x) = x · σ(x) = x / (1 + e^{−x})
-가중치: export_weights() 가 best_{cell,pack}_ae.pt → weights_{cell,pack}.npz 로 변환 (Mac 에서 1회, torch 필요)
-
-Classes / Functions:
-    NpFlowAE(npz_path)        : (N, C, L) → (N, C, L)
-    NpExpert(exp_dir)         : model.Expert 와 같은 inputs / scores
-    export_weights(model_dir) : .pt → .npz (전문가 폴더마다)
-
-Usage:
-    ex = NpExpert(os.path.join(WEIGHTS_DIR, "dis")); s_cell_i, s_pack = ex.scores(H)   # WEIGHTS_DIR = 5_weights/AE
-"""
-
 import json
 import os
 
@@ -22,20 +5,17 @@ import numpy as np
 
 from features import cell_features, pack_features, normalize, N_CELL_F, N_PACK_F, L_HIST
 
-# ===== 경로 / 상수 =====
 AI_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEIGHTS_DIR: str = os.path.join(AI_DIR, "5_weights", "AE")
 DATA_DIR: str = os.path.join(AI_DIR, "data")
-ACT_AFTER: tuple[int, ...] = (0, 1, 3, 4)          # 6 개 Linear 중 SiLU 가 뒤따르는 층 (latent·출력층 제외)
+ACT_AFTER: tuple[int, ...] = (0, 1, 3, 4)
 
 
 def silu(x: np.ndarray) -> np.ndarray:
-    """SiLU(x) = x / (1 + e^{−x}) (overflow 방지: clip)."""
     return x / (1.0 + np.exp(-np.clip(x, -60.0, 60.0)))
 
 
 class NpFlowAE:
-    """numpy MLP AE.  (N, C, L) → (N, C, L)"""
 
     def __init__(self, npz_path: str) -> None:
         try:
@@ -43,12 +23,11 @@ class NpFlowAE:
         except OSError as e:
             raise RuntimeError(f"가중치 로드 실패: {npz_path}: {e}") from e
         n = int(d["n_layers"])
-        self.W = [d[f"W{i}"].astype(np.float32) for i in range(n)]     # (out, in)
+        self.W = [d[f"W{i}"].astype(np.float32) for i in range(n)]
         self.b = [d[f"b{i}"].astype(np.float32) for i in range(n)]
         self.n_feat, self.L = int(d["n_feat"]), int(d["L"])
 
     def __call__(self, z: np.ndarray) -> np.ndarray:
-        """(N, C, L) → (N, C·L) → … → (N, C, L)"""
         x = z.reshape(len(z), -1)
         for i, (W, b) in enumerate(zip(self.W, self.b)):
             x = x @ W.T + b
@@ -58,13 +37,11 @@ class NpFlowAE:
 
 
 def np_scores(model: NpFlowAE, Z: np.ndarray, batch: int = 8192) -> np.ndarray:
-    """샘플별 복원오차 mean (ẑ − z)².  (N, C, L) → (N,)"""
     out = [((model(Z[i:i + batch]) - Z[i:i + batch]) ** 2).mean(axis=(1, 2)) for i in range(0, len(Z), batch)]
     return np.concatenate(out) if out else np.zeros(0, dtype=np.float32)
 
 
 class NpExpert:
-    """경로 1개 = 셀 공용 AE + 팩 AE + 정규화 통계 (model.Expert 와 같은 인터페이스)."""
 
     def __init__(self, exp_dir: str, device=None) -> None:
         self.stats, self.models = {}, {}
@@ -77,18 +54,15 @@ class NpExpert:
             self.models[name] = NpFlowAE(os.path.join(exp_dir, f"weights_{name}.npz"))
 
     def inputs(self, H: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """H (N, L, 13) → Zc (N·4, 9, L), Zp (N, 10, L)"""
         return (normalize(cell_features(H).reshape(-1, N_CELL_F, L_HIST), self.stats["cell"]),
                 normalize(pack_features(H), self.stats["pack"]))
 
     def scores(self, H: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """H (N, L, 13) → 셀별 (N, 4), 팩 (N,)"""
         Zc, Zp = self.inputs(H)
         return np_scores(self.models["cell"], Zc).reshape(-1, 4), np_scores(self.models["pack"], Zp)
 
 
 def export_weights(model_dir: str) -> list[str]:
-    """<model_dir>/<경로>/best_*_ae.pt → weights_*.npz (torch 필요, 학습 PC 에서 1회)."""
     import torch
     out = []
     for r in sorted(os.listdir(model_dir)):
@@ -110,7 +84,6 @@ def export_weights(model_dir: str) -> list[str]:
 
 
 if __name__ == "__main__":
-    # 변환 + torch 판과 일치 검증: fault3 일부 윈도우로 셀·팩 점수 비교 (1_preprocess 실행 후)
     try:
         import torch
         from model import Expert

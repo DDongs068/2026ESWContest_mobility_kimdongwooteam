@@ -225,3 +225,7 @@ AI_AutoEncoder/data/*.npz
 AI_AutoEncoder/data/meta_*.csv
 AI_AutoEncoder/5_weights/AE_retrain/
 .DS_Store
+AI_AutoEncoder/RaspberryPi/monitor/runtime/
+AI_AutoEncoder/RaspberryPi/relay/data*/
+AI_AutoEncoder/RaspberryPi/relay/buffer/
+AI_AutoEncoder/RaspberryPi/relay/logs/

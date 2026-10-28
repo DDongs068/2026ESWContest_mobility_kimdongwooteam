@@ -8,16 +8,11 @@
 #include <stdio.h>
 #include <string.h>
 
-/* W5500 datasheet v1.1.0: VDM block0 common, block1 socket0, block2 TX0, block3 RX0.
- * https://docs.wiznet.io/img/products/w5500/W5500_ds_v110e.pdf
- * Socket0: UDP telemetry TX + AI alarm RX. AI can stop outputs, never start them. */
 volatile Ethernet_Control g_eth_control;
 volatile Ethernet_Status g_eth;
 static Ethernet_Control active;
 static uint32_t last_attempt, pending_tick, last_init, last_link;
 static int init_attempted;
-/* Socket1 is independent of socket0 telemetry/AI; it replies to the request's
- * source port. Revision is consumed by ON/OFF/AI-stop to reject stale ONs. */
 static uint32_t motor_revision, motor_pending_tick, motor_reply_id;
 static uint16_t motor_reply_port;
 static int motor_pending, motor_reply_wait, motor_reply_result;
@@ -77,16 +72,15 @@ static int setup(void)
     if (write_bytes(0, 1, network, sizeof network) ||
         read_bytes(0, 1, check, sizeof check)) return -1;
     if (memcmp(check, network, sizeof check)) return -7;
-    /* 200ms retry interval, one retry. No busy wait for ARP completion. */
     const uint8_t retry[3] = {0x07, 0xD0, 1};
     if (write_bytes(0, 0x19, retry, 3)) return -1;
-    rc = command(0x10); /* CLOSE before configuration. */
+    rc = command(0x10);
     if (rc) return rc;
     if (write8(1, 0x1E, 2) || write8(1, 0x1F, 2) ||
         write8(1, 0, 2) || write16(4, active.local_port) ||
         write_bytes(1, 0x0C, active.peer_ip, 4) ||
         write16(0x10, active.peer_port) || write8(1, 2, 0xFF)) return -1;
-    rc = command(1); /* OPEN */
+    rc = command(1);
     if (rc) return rc;
     uint32_t start = HAL_GetTick();
     do {
@@ -104,7 +98,6 @@ static int setup(void)
 static uint16_t get16(const uint8_t *p)
 { return (uint16_t)(((uint16_t)p[0] << 8) | p[1]); }
 
-/* Socket0 has a 2KB RX buffer. Split reads at the physical ring boundary. */
 static int rx_read(uint16_t pointer, uint8_t *data, uint16_t length)
 {
     uint16_t offset = pointer & 2047u;
@@ -117,8 +110,6 @@ static int rx_read(uint16_t pointer, uint8_t *data, uint16_t length)
 
 static int receive_ai(void)
 {
-    /* Limit work per main-loop iteration. RECV releases each whole datagram,
-     * including bad/disabled inputs, so they cannot block following packets. */
     for (unsigned packet = 0u; packet < 4u; ++packet) {
         uint16_t size1 = 0u, size2 = 0u, pointer, length;
         uint8_t header[8], message[6];
@@ -130,7 +121,6 @@ static int receive_ai(void)
         if (!stable || size1 < sizeof header) return 0;
         if (size1 > 2048u) return -8;
         if (read16(0x28u, &pointer) || rx_read(pointer, header, sizeof header)) return -1;
-        /* UDP RX header: source IP[4], source port[2], payload length[2]. */
         length = get16(header + 6);
         if (length > 2040u) return -8;
         if ((uint32_t)length + sizeof header > size1) return 0;
@@ -145,15 +135,12 @@ static int receive_ai(void)
                  (length == 6u && message[4] == '\r' && message[5] == '\n')))
                 result = 0;
         }
-        /* Change the indication only after the datagram was read and released. */
         if (write16(0x28u, (uint16_t)(pointer + 8u + length))) return -1;
-        int rc = command(0x40u); /* RECV */
+        int rc = command(0x40u);
         if (rc) return rc;
         g_eth.last_rx_result = result;
         if (result) ++g_eth.rx_rejected;
         else {
-            /* Preserve a short alarm event even if AI:0 follows in this batch.
-             * Repeated AI:1 keeps the hold, without repeating the BMIC command. */
             if (message[3] == '1' && !g_control.ai_alarm) {
                 g_control.off = 1u; ++motor_revision;
             }
@@ -166,7 +153,6 @@ static int receive_ai(void)
     return 0;
 }
 
-/* Socket1 VDM blocks: registers5, TX6, RX7 (W5500 datasheet Table3). */
 static int mread16(uint16_t address, uint16_t *value)
 {
     uint8_t p[2];
@@ -215,7 +201,6 @@ static int mring(uint16_t pointer, uint8_t *data, uint16_t length, int write)
                                                 data+first, (uint16_t)(length-first))) return -1;
     return 0;
 }
-/* Strict decimal parser: no signs, whitespace, overflow, embedded NUL, suffix. */
 static int decimal(const char **input, uint32_t *value)
 {
     const char *p = *input;
@@ -248,7 +233,6 @@ static int motor_receive(void)
             length>0 && length<sizeof message;
         if (readable) {
             if (mring((uint16_t)(pointer+8u), (uint8_t *)message, length, 0)) return -1;
-            /* Only a single complete ASCII command is accepted. */
             if (memchr(message,0,length)) readable=0;
             message[length]=0;
         }
@@ -258,7 +242,7 @@ static int motor_receive(void)
         const char *p=message+4; uint32_t id, revision;
         if (decimal(&p,&id) || *p++!=' ') continue;
         int result=0;
-        if (!strcmp(p,"STATUS")) { /* No output changes. */ }
+        if (!strcmp(p,"STATUS")) {   }
         else if (!strcmp(p,"ACK")) result=Safety_Rearm();
         else if (!strcmp(p,"STREAM ON")) g_eth_control.enable=1;
         else if (!strcmp(p,"STREAM OFF")) g_eth_control.enable=0;
@@ -296,7 +280,7 @@ static int motor_receive(void)
             if (revision!=motor_revision) result=-30;
             else if (g_safety.latched) result=-50;
             else {
-                ++motor_revision; /* Invalidates retransmitted/old ON. */
+                ++motor_revision;
                 result=BMS_RemoteMotorOn();
             }
         } else continue;
@@ -310,7 +294,6 @@ static int motor_update(void)
     uint8_t status;
     if (read_bytes(5,3,&status,1)) return -1;
     if (status!=0x22u) return motor_setup();
-    /* Always drain requests, even while a previous reply waits for ARP. */
     int rc=motor_receive(); if (rc) return rc;
     uint32_t now=HAL_GetTick();
     if (motor_pending) {
@@ -353,7 +336,6 @@ static int motor_update(void)
         (long)g_balance.result,(unsigned long)g_balance.running);
     if (count<0 || count>=(int)sizeof data) return -9;
     uint16_t free1,free2,pointer;
-    /* An unstable/free-full TX buffer leaves the reply queued. */
     if (mread16(0x20,&free1) || mread16(0x20,&free2)) return -1;
     if (free1!=free2 || free1<(unsigned)count) return 0;
     if (write_bytes(5,0x0C,active.peer_ip,4) || mwrite16(0x10,motor_reply_port) ||
@@ -397,7 +379,6 @@ uint16_t Ethernet_Test_Encode(uint8_t p[ETH_TEST_PACKET_SIZE], uint32_t sequence
     if (n < 0 || n >= (int)ETH_TEST_PACKET_SIZE) return 0;
     unsigned used = (unsigned)n;
     for (unsigned i = 0; i < 12; ++i) {
-        /* Integer formatting avoids nano printf floating-point support. */
         uint32_t magnitude = values[i] < 0 ? (uint32_t)(-(int64_t)values[i]) : (uint32_t)values[i];
         if (!valid) n = snprintf((char *)p + used, ETH_TEST_PACKET_SIZE-used, ",NA");
         else n = snprintf((char *)p + used, ETH_TEST_PACKET_SIZE-used, ",%s%lu.%03lu",
@@ -460,7 +441,6 @@ void Ethernet_Test_Update(void)
         if (read_bytes(0, 0x2E, &phy, 1)) { failed(-1); return; }
         g_eth.phy = phy; g_eth.link_up = phy & 1u;
     }
-    /* RX runs before the pending TX check: an ARP wait never starves AI input. */
     int rx_result = receive_ai();
     if (rx_result) {
         g_eth.last_rx_result = rx_result;
@@ -473,10 +453,6 @@ void Ethernet_Test_Update(void)
         uint8_t ir;
         if (read_bytes(1, 2, &ir, 1)) { failed(-1); return; }
         if (ir & 8u) {
-            /* UDP ARP timeout: acknowledge it and retry on the same socket.
-             * A full chip reset here drops the PHY link and unread AI packets.
-             * This follows WIZnet's UDP sendto timeout recovery. The separate
-             * no-interrupt watchdog below still recovers a stalled chip. */
             if (write8(1, 2, 8u)) { failed(-1); return; }
             g_eth.pending = 0;
             g_eth.last_result = -5;
@@ -508,7 +484,7 @@ void Ethernet_Test_Update(void)
     if (read16(0x24, &pointer) || write8(1, 2, 0x18) ||
         write_bytes(2, pointer, p, length) ||
         write16(0x24, (uint16_t)(pointer+length))) { failed(-1); return; }
-    int rc = command(0x20); /* SEND accepted != transmission complete. */
+    int rc = command(0x20);
     if (rc) { failed(rc); return; }
     pending_tick = HAL_GetTick(); g_eth.pending = 1; g_eth.last_result = 1;
 }

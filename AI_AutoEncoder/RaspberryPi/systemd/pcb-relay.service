@@ -1,0 +1,13 @@
+[Unit]
+Description=Mac(USB) <-> PCB(Ethernet) UDP relay
+After=network.target NetworkManager.service
+
+[Service]
+User=rpi4
+WorkingDirectory=/home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/relay
+ExecStart=/usr/bin/python3 -u /home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/relay/relay.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

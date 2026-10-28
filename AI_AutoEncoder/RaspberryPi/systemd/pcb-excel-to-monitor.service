@@ -1,0 +1,12 @@
+[Unit]
+Description=Excel(normal) 10-row blocks -> AE monitor (UDP 5005)
+After=pcb-calc-buffer.service aibms-monitor.service
+
+[Service]
+WorkingDirectory=/home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/relay
+ExecStart=/usr/bin/python3 -u /home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/relay/excel_to_monitor.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

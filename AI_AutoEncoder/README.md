@@ -1,6 +1,8 @@
 # AI 파트 — AE (AutoEncoder)
 
-정상 데이터만으로 학습한 AE로 배터리 팩의 위험 이상을 1 s마다 판정합니다. 이상이 나면 문제 셀을 지목합니다. Raspberry Pi 5에서는 numpy만으로 실행합니다.
+정상 데이터만으로 학습한 AE로 배터리 팩의 위험 이상을 1 s마다 판정합니다. 이상이 나면 문제 셀을 지목합니다.
+
+학습은 PC에서 하고(`1_preprocess` → `2_train` → `5_weights`), **판정은 Raspberry Pi 5가 합니다.** Pi는 이 폴더의 모델 코드(`3_model`)와 가중치(`5_weights/AE`)를 그대로 불러와 numpy만으로 실행합니다. Pi에서 도는 판정 서버와 통신 코드는 [`RaspberryPi/`](RaspberryPi)에 있습니다.
 
 ## 목차
 1. [폴더 구성](#1-폴더-구성)
@@ -11,6 +13,7 @@
    - [3_model — 모델](#3_model--모델)
    - [4_eval — 평가](#4_eval--평가)
    - [5_weights — 모델 가중치](#5_weights--모델-가중치)
+   - [RaspberryPi — Pi 실시간 판정](#raspberrypi--pi-실시간-판정)
 4. [실시간 추론 예시 (Raspberry Pi)](#4-실시간-추론-예시-raspberry-pi)
 5. [데이터 형식](#5-데이터-형식)
 
@@ -31,6 +34,7 @@ AI_AutoEncoder/
 │   ├── eval.py                  평가 (confusion matrix · 오경보 · 탐지 지연 · HW 보호 대비)
 │   └── results/                 평가 결과
 ├── 5_weights/AE/                학습된 가중치 (충전 chg · 주행 dis · 휴지 rest) + threshold.json
+├── RaspberryPi/                 Pi 5 에서 실행: AE 판정 서버 · 모니터 UI · 통신 코드 · 자동 실행 서비스
 └── data/split_runs.csv          run 단위 학습 / 검증 / 테스트 분할
 ```
 
@@ -162,11 +166,25 @@ python 4_eval/eval.py
 | 주행 `dis` | 1.171 | 0.835 | 95,688 |
 | 휴지 `rest` | 1.188 | 0.794 | 41,903 |
 
+### RaspberryPi — Pi 실시간 판정
+
+위에서 학습한 AE를 Raspberry Pi 5에서 실제로 실행하는 코드입니다. 자세한 내용은 [RaspberryPi/README.md](RaspberryPi/README.md)에 있습니다.
+
+| 폴더 | 역할 |
+|---|---|
+| `RaspberryPi/monitor/` | `monitor_server.py`가 `3_model`과 `5_weights/AE`를 불러와 MCU 측정값을 1 s마다 판정하고, 결과를 모니터 UI(포트 8050)에 표시합니다. |
+| `RaspberryPi/relay/` | MCU 측정 수신(5001), 시뮬레이션 데이터 수신(5002), 엑셀 버퍼, 모니터로 전달(5005), Mac ↔ PCB 명령 중계(6000 → 5000) |
+| `RaspberryPi/systemd/` | 부팅할 때 위 코드를 자동으로 실행하는 서비스 파일 |
+
+```bash
+bash RaspberryPi/monitor/run.sh        # Pi 에서: AE 판정 서버 + UI → http://<Pi IP>:8050
+```
+
 ---
 
 ## 4. 실시간 추론 예시 (Raspberry Pi)
 
-1 s마다 최근 55 s 이력 `H`(5 s 간격 1 s 윈도우 12개)를 만들어 아래처럼 판정합니다. numpy만 있으면 됩니다.
+`RaspberryPi/monitor/monitor_server.py`가 1 s마다 하는 일을 줄이면 아래와 같습니다. 최근 55 s 이력 `H`(5 s 간격 1 s 윈도우 12개)를 만들어 판정하며, numpy만 있으면 됩니다.
 
 ```python
 import json, sys

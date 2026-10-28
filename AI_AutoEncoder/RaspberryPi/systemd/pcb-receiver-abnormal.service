@@ -1,0 +1,12 @@
+[Unit]
+Description=Abnormal data receiver (127.0.0.1:5013) -> Calc buffer 5012
+After=network.target pcb-ack-gate.service
+
+[Service]
+WorkingDirectory=/home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/relay
+ExecStart=/usr/bin/python3 -u /home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/relay/receiver.py --port 5013 --allow-net 127.0.0.1/32 --data-dir /home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/relay/data_abnormal --forward 127.0.0.1:5012
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

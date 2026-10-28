@@ -2,7 +2,6 @@
 #define SAFETY_SUPERVISOR_H
 #include <stdint.h>
 #include "bq76922.h"
-/* Independent live BMIC safety. Replay values never enter this module. */
 enum { SAFE_BMIC=1u, SAFE_COMM=2u, SAFE_STALE=4u, SAFE_EST0P=8u,
        SAFE_SENSOR=16u, SAFE_DRIVER=32u, SAFE_DSG=64u, SAFE_CONFIG=128u, SAFE_PROFILE=256u };
 typedef struct {
@@ -16,7 +15,6 @@ typedef struct {
 extern volatile Safety_Status g_safety;
 void Safety_Init(void);
 void Safety_RefreshProfile(void);
-/* Run before AND after BMS_App_Update; finite I2C timeouts remain in BMIC driver. */
 void Safety_Update(void);
 int Safety_Rearm(void);
 #endif

@@ -1,6 +1,3 @@
-# Standalone ARM build. CubeIDE managed builds remain available separately.
-# make TOOLCHAIN_BIN=/absolute/path/to/arm-gnu-toolchain/bin
-# make CONFIG=Release TOOLCHAIN_BIN=/absolute/path/to/arm-gnu-toolchain/bin
 CONFIG ?= Debug
 TOOLCHAIN_BIN ?=
 CROSS_COMPILE ?= arm-none-eabi-

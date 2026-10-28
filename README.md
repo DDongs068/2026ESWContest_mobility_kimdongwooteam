@@ -17,8 +17,10 @@ flowchart LR
         APP --> ETH["ethernet_test.c<br/>W5500 UDP 통신"]
         DEMO["demo_stream.c<br/>시뮬레이션 측정 재생"] --> ETH
     end
-    subgraph PI["Raspberry Pi 5"]
-        AE["AE 판정 · 1 s 마다<br/>3_model/np_model.py<br/>5_weights/AE"]
+    subgraph PI["Raspberry Pi 5 — AI_AutoEncoder/RaspberryPi/"]
+        RX["relay/receiver.py<br/>측정 수신 · 기록 · 엑셀 버퍼"] --> AE["monitor/monitor_server.py<br/>AE 판정 · 1 s 마다<br/>(3_model + 5_weights/AE)"]
+        AE --> UI["모니터 UI"]
+        RLY["relay/relay.py<br/>명령 중계"]
     end
     subgraph TRAIN["AI_AutoEncoder/ — 학습 PC"]
         SIM["Simscape 디지털 트윈<br/>정상 · 이상 시뮬레이션"] --> PRE["1_preprocess<br/>1 s 윈도우 요약"]
@@ -26,9 +28,9 @@ flowchart LR
         W --> EV["4_eval<br/>평가"]
     end
     BQ -- "I²C" --> DRV
-    ETH -- "UDP 5001 측정 (10 Hz)" --> AE
-    AE -- "UDP 5000 AI:1 → 출력 차단" --> ETH
-    W -. "가중치 배포" .-> AE
+    ETH -- "UDP 5001 측정 (10 Hz)" --> RX
+    RLY -- "UDP 5000 명령 (AI:1 출력 차단)" --> ETH
+    W -. "Pi 에 올려 실행" .-> AE
 ```
 
 ## 저장소 구성
@@ -44,7 +46,8 @@ flowchart LR
 │   ├── 2_train/                  모델 학습
 │   ├── 3_model/                  모델 (PyTorch · Pi 용 numpy 추론)
 │   ├── 4_eval/                   평가
-│   └── 5_weights/AE/             모델 가중치
+│   ├── 5_weights/AE/             모델 가중치
+│   └── RaspberryPi/              Pi 5 실행 코드: AE 판정 서버 · 모니터 UI · 통신 · 자동 실행 서비스
 └── docs/                         README 그림 · 그림 생성 코드
 ```
 
@@ -52,6 +55,7 @@ flowchart LR
 |---|---|---|
 | [`MCU/`](MCU) | BQ76922 측정 · 안전 감시 · 부하/충전/밸런싱 제어 · Pi 통신 · 측정 재생 | [MCU/README.md](MCU/README.md) |
 | [`AI_AutoEncoder/`](AI_AutoEncoder) | 1. 전처리 · 2. 모델 학습 · 3. 모델 · 4. 평가 · 5. 모델 가중치 | [AI_AutoEncoder/README.md](AI_AutoEncoder/README.md) |
+| [`AI_AutoEncoder/RaspberryPi/`](AI_AutoEncoder/RaspberryPi) | Pi에서 AE를 실행하는 판정 서버 · 모니터 UI · 통신 코드 | [RaspberryPi/README.md](AI_AutoEncoder/RaspberryPi/README.md) |
 | [`docs/`](docs) | 그림 · 그림 생성 코드 | — |
 
 ---
@@ -67,6 +71,8 @@ MCU 펌웨어(STM32G474)의 코드 설명, 빌드 방법, 통신 규약, 안전 
 ## 2. AI 파트 — AE
 
 ### 구성
+
+학습은 PC에서 하고, **판정은 Raspberry Pi 5가 합니다.** Pi는 `AI_AutoEncoder`의 모델 코드와 가중치를 그대로 불러와 MCU가 보낸 측정값을 1 s마다 판정하고, 결과를 모니터 UI에 표시합니다. 판정 서버는 `AI_AutoEncoder/RaspberryPi`에 있습니다.
 
 ![AE 구성](docs/ae_architecture.png)
 
