@@ -141,6 +141,7 @@ static int receive_ai(void)
         g_eth.last_rx_result = result;
         if (result) ++g_eth.rx_rejected;
         else {
+            if (message[3] == '1') Safety_Trip(SAFE_AI);
             if (message[3] == '1' && !g_control.ai_alarm) {
                 g_control.off = 1u; ++motor_revision;
             }
@@ -248,7 +249,7 @@ static int motor_receive(void)
         else if (!strcmp(p,"STREAM OFF")) g_eth_control.enable=0;
         else if (!strcmp(p,"BALANCE OFF")) g_balance.stop=1;
         else if (!strcmp(p,"BALANCE ON")) {
-            if (g_safety.active || g_safety.latched || g_control.ai_alarm ||
+            if (Safety_CanEnable() || g_control.ai_alarm ||
                 g_control.off || g_bms.stage || g_bms.power_gpio_mask) result=-50;
             else g_balance.start=1;
         }
@@ -267,6 +268,7 @@ static int motor_receive(void)
             if (!g_eth_control.ai_rx_enable || !g_demo.mode || !g_demo.valid || session!=g_demo.session ||
                 sequence>g_demo.last_sequence || g_demo.last_sequence-sequence>100u) result=-44;
             else {
+                if (alarm) Safety_Trip(SAFE_AI);
                 if (alarm && !g_control.ai_alarm) { g_control.off=1; ++motor_revision; }
                 g_control.ai_alarm=alarm;
                 g_eth.ai_rx_received=1; g_eth.last_ai_tick=HAL_GetTick();
@@ -278,7 +280,7 @@ static int motor_receive(void)
             p+=3;
             if (decimal(&p,&revision) || *p) continue;
             if (revision!=motor_revision) result=-30;
-            else if (g_safety.latched) result=-50;
+            else if (Safety_CanEnable()) result=-50;
             else {
                 ++motor_revision;
                 result=BMS_RemoteMotorOn();
@@ -406,7 +408,7 @@ uint16_t Ethernet_Test_Encode(uint8_t p[ETH_TEST_PACKET_SIZE], uint32_t sequence
 
 void Ethernet_Test_Init(void)
 {
-    g_eth_control = (Ethernet_Control){.period_ms=100, .ai_rx_enable=1, .telemetry_v2=1, .motor_rx_enable=1, .motor_port=5002,
+    g_eth_control = (Ethernet_Control){.enable=1, .period_ms=100, .ai_rx_enable=1, .telemetry_v2=1, .motor_rx_enable=1, .motor_port=5002,
         .ip={192,168,10,20}, .peer_ip={192,168,10,1}, .subnet={255,255,255,0},
         .gateway={192,168,10,1}, .mac={0x02,0x42,0x4D,0x53,0x00,0x01},
         .local_port=5000, .peer_port=5001};

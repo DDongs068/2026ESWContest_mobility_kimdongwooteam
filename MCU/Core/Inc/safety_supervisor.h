@@ -3,7 +3,8 @@
 #include <stdint.h>
 #include "bq76922.h"
 enum { SAFE_BMIC=1u, SAFE_COMM=2u, SAFE_STALE=4u, SAFE_EST0P=8u,
-       SAFE_SENSOR=16u, SAFE_DRIVER=32u, SAFE_DSG=64u, SAFE_CONFIG=128u, SAFE_PROFILE=256u };
+       SAFE_SENSOR=16u, SAFE_DRIVER=32u, SAFE_DSG=64u, SAFE_CONFIG=128u, SAFE_PROFILE=256u,
+       SAFE_AI=512u, SAFE_REPLAY=1024u, SAFE_FET_COMMAND=2048u };
 typedef struct {
     uint32_t active, latched, event_count, first_trip_tick, last_tick, ack;
     uint32_t sample_age_ms;
@@ -17,4 +18,6 @@ void Safety_Init(void);
 void Safety_RefreshProfile(void);
 void Safety_Update(void);
 int Safety_Rearm(void);
+void Safety_Trip(uint32_t reason);
+int Safety_CanEnable(void);
 #endif

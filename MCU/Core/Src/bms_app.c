@@ -220,6 +220,7 @@ static void Configure(void)
     if (!g_bms.configure_result) g_bms.configure_result = id_result;
     g_bms.setup_ok = g_bms.configure_result == 0;
     g_bms.fet_off_result = BQ_DisableFETs();
+    if (g_bms.setup_ok && !g_bms.fet_off_result) g_bms.fet_on_result=0;
     last_sample = HAL_GetTick() - 100u;
 }
 void BMS_App_Init(I2C_HandleTypeDef *bus)

@@ -11,7 +11,7 @@ static Frame queue[DEMO_QUEUE_SIZE], current;
 static uint32_t head, count, next_sequence, previous_ms, origin_ms, wall_start, last_input;
 static uint32_t have_input, have_output, previous_crc;
 static int halted;
-static int32_t maxima[100];
+static int32_t maxima[10];
 static unsigned maxima_count, maxima_head;
 static uint32_t u32(const uint8_t *p)
 { return ((uint32_t)p[0]<<24)|((uint32_t)p[1]<<16)|((uint32_t)p[2]<<8)|p[3]; }
@@ -102,17 +102,17 @@ void Demo_Update(void)
         if (current.current<=-6000) flags|=4u;
         if (flags && !g_demo.baseline_flags) g_demo.first_baseline_ms=current.ms;
         g_demo.baseline_flags|=flags;
-        maxima[maxima_head++%100u]=maximum;
-        if (maxima_count<100u) ++maxima_count;
-        if (maxima_count==100u && (g_demo.played-100u)%50u==0u) {
-            int32_t sorted[100]; memcpy(sorted,maxima,sizeof sorted);
-            for (unsigned i=1;i<100u;++i) {
+        maxima[maxima_head++%10u]=maximum;
+        if (maxima_count<10u) ++maxima_count;
+        if (maxima_count==10u && g_demo.played%10u==0u) {
+            int32_t sorted[10]; memcpy(sorted,maxima,sizeof sorted);
+            for (unsigned i=1;i<10u;++i) {
                 int32_t v=sorted[i]; unsigned j=i;
                 while (j && sorted[j-1]>v) { sorted[j]=sorted[j-1]; --j; }
                 sorted[j]=v;
             }
             g_demo.rule_ready=1;
-            g_demo.spec_overcharge=(int64_t)sorted[49]+sorted[50]>8410;
+            g_demo.spec_overcharge=(int64_t)sorted[4]+sorted[5]>8410;
         }
         g_demo.route=current.current>30?1u:current.current< -30?2u:0u;
     }

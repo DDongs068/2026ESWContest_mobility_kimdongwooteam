@@ -3,8 +3,8 @@ TOOLCHAIN_BIN ?=
 CROSS_COMPILE ?= arm-none-eabi-
 HOST_CC ?= clang
 BUILD_DIR := build/$(CONFIG)
-OUTPUT_DIR := ../firmware/$(CONFIG)
-TARGET := $(OUTPUT_DIR)/testest_proto
+OUTPUT_DIR := $(CONFIG)
+TARGET := $(OUTPUT_DIR)/aibms_true_final_mcu
 TOOLS := $(if $(strip $(TOOLCHAIN_BIN)),$(TOOLCHAIN_BIN)/,)$(CROSS_COMPILE)
 CC := $(TOOLS)gcc
 OBJCOPY := $(TOOLS)objcopy
@@ -30,7 +30,7 @@ OBJECTS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES)) \
 LDFLAGS := $(CPU) -TSTM32G474RETX_FLASH.ld --specs=nano.specs --specs=nosys.specs \
            -Wl,--gc-sections -Wl,--print-memory-usage -Wl,-Map=$(TARGET).map
 
-.PHONY: all size host-test
+.PHONY: all size
 all: $(TARGET).elf $(TARGET).hex $(TARGET).bin size
 
 $(BUILD_DIR)/%.o: %.c
@@ -53,8 +53,5 @@ $(TARGET).bin: $(TARGET).elf
 
 size: $(TARGET).elf
 	"$(SIZE)" "$<"
-
-host-test:
-	HOST_CC="$(HOST_CC)" sh tests/run_host_tests.sh
 
 -include $(OBJECTS:.o=.d)

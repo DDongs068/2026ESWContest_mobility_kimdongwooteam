@@ -1,6 +1,7 @@
 #include "safety_supervisor.h"
 #include "bms_app.h"
 #include "main.h"
+#include "demo_stream.h"
 #include <math.h>
 #include <string.h>
 volatile Safety_Status g_safety;
@@ -30,6 +31,10 @@ static uint32_t evaluate(void)
         if (g_safety.pf[i]) reasons|=SAFE_BMIC;
     }
     if (!b.setup_ok || b.configure_result) reasons|=SAFE_CONFIG;
+    if (b.fet_on_result || b.fet_off_result) reasons|=SAFE_FET_COMMAND;
+    if (g_control.ai_alarm) reasons|=SAFE_AI;
+    if (g_demo.mode && (g_demo.baseline_flags || g_demo.spec_overcharge ||
+        g_demo.last_result==-45)) reasons|=SAFE_REPLAY;
     if (!b.data_valid || b.sample_result) reasons|=SAFE_COMM;
     if (!b.sample_count || now-b.sample_tick>500u) reasons|=SAFE_STALE;
     if (HAL_GPIO_ReadPin(ESTOP_OK_GPIO_Port,ESTOP_OK_Pin)!=GPIO_PIN_SET) reasons|=SAFE_EST0P;
@@ -59,35 +64,62 @@ void Safety_RefreshProfile(void)
     if (!rc) g_safety.profile=profile;
     g_safety.profile_tick=HAL_GetTick();
 }
+int Safety_CanEnable(void)
+{
+    g_safety.active=evaluate();
+    return (g_safety.active || g_safety.latched)?-50:0;
+}
 int Safety_Rearm(void)
 {
     g_safety.active=evaluate();
-    if (g_safety.active || g_bms.stage || g_bms.power_gpio_mask || g_charge.command_enabled)
+    if (g_safety.active || g_bms.stage || g_bms.power_gpio_mask || g_charge.command_enabled ||
+        g_balance.running || g_balance.active_mask || g_balance.stop_pending ||
+        g_motor.pwm1_permille || g_motor.pwm2_permille)
         return (g_safety.last_rearm_result=-50);
-    g_safety.latched=0; g_safety.last_rearm_result=0; return 0;
+    g_safety.latched=0; g_safety.last_rearm_result=0;
+    g_control.step7_2=g_control.step7_3=g_control.motor_on=g_control.all_on=0;
+    g_charge.on=0; g_balance.start=0;
+    return 0;
 }
-void Safety_Update(void)
+void Safety_Trip(uint32_t reason)
 {
-    if (HAL_GetTick()-g_safety.profile_tick>=5000u) Safety_RefreshProfile();
-    g_safety.active=evaluate(); g_safety.last_tick=HAL_GetTick();
-    if (g_safety.ack) { g_safety.ack=0; (void)Safety_Rearm(); }
-    if (g_safety.active) g_balance.enable=0;
+    if (!reason) return;
+    uint32_t fresh=reason&~g_safety.latched;
+    if (!g_safety.latched) {
+        ++g_safety.event_count; g_safety.first_trip_tick=HAL_GetTick();
+    }
+    g_safety.latched|=reason;
+    Board_ForceSafeOutputs(); g_bms.stage=0; g_bms.power_gpio_mask=0;
+    if (fresh) g_control.off=1;
+    HAL_GPIO_WritePin(FAULT_LED_GPIO_Port,FAULT_LED_Pin,GPIO_PIN_RESET);
+}
+static void apply_safety(void)
+{
     int requested=g_control.step7_2 || g_control.step7_3 || g_control.motor_on ||
                   g_control.all_on || g_charge.on || g_balance.start;
-    int powered=g_bms.stage || g_bms.power_gpio_mask || g_charge.command_enabled || g_balance.running;
-    if ((g_safety.active && (requested || powered)) || (g_safety.latched && powered)) {
-        if (!g_safety.latched) {
-            ++g_safety.event_count; g_safety.first_trip_tick=g_safety.last_tick;
-        }
-        g_safety.latched|=g_safety.active;
+    int powered=g_bms.stage || g_bms.power_gpio_mask || g_charge.command_enabled ||
+                g_balance.running || g_balance.active_mask ||
+                g_motor.pwm1_permille || g_motor.pwm2_permille;
+    if (g_safety.active) g_balance.enable=0;
+    if (g_safety.active && (requested || powered ||
+        (g_safety.active&(SAFE_AI|SAFE_REPLAY)))) Safety_Trip(g_safety.active);
+    if (g_safety.latched && (powered || requested)) {
         Board_ForceSafeOutputs(); g_bms.stage=0; g_bms.power_gpio_mask=0;
         g_control.off=1;
     }
-    if (g_safety.active || g_safety.latched)
-        HAL_GPIO_WritePin(FAULT_LED_GPIO_Port,FAULT_LED_Pin,GPIO_PIN_RESET);
     if (g_safety.latched) {
-        if (requested) g_control.off=1;
         g_control.step7_2=g_control.step7_3=g_control.motor_on=g_control.all_on=0;
         g_charge.on=0; g_balance.start=g_balance.enable=0;
     }
+    if (g_safety.active || g_safety.latched)
+        HAL_GPIO_WritePin(FAULT_LED_GPIO_Port,FAULT_LED_Pin,GPIO_PIN_RESET);
+}
+void Safety_Update(void)
+{
+    g_safety.active=evaluate(); g_safety.last_tick=HAL_GetTick(); apply_safety();
+    if (HAL_GetTick()-g_safety.profile_tick>=5000u) {
+        Safety_RefreshProfile();
+        g_safety.active=evaluate(); apply_safety();
+    }
+    if (g_safety.ack) { g_safety.ack=0; (void)Safety_Rearm(); }
 }

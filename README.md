@@ -40,7 +40,7 @@ flowchart LR
 ├── MCU/                          STM32G474 펌웨어 (STM32CubeIDE 프로젝트)
 │   ├── Core/Src/                 main.c · bq76922.c · bms_app.c · safety_supervisor.c · ethernet_test.c · demo_stream.c
 │   ├── Drivers/                  ST HAL · CMSIS
-│   └── aibms_final_mcu.ioc · Makefile · 링커 스크립트
+│   └── aibms_true_final_mcu.ioc · Makefile · 링커 스크립트
 ├── AI_AutoEncoder/               AE 이상 탐지
 │   ├── 1_preprocess/             전처리
 │   ├── 2_train/                  모델 학습

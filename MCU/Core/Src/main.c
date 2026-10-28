@@ -28,9 +28,11 @@ int main(void)
     while (1) {
         Safety_Update();
         Demo_Update();
+        Safety_Update();
         BMS_App_Update();
         Safety_Update();
         Ethernet_Test_Update();
+        Safety_Update();
         HAL_Delay(5u);
     }
 }
