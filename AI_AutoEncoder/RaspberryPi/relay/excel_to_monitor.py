@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 import os
 import socket
@@ -39,6 +38,13 @@ def to_line(src, r):
     return f"{src},{int(r[IDX['seq']])}," + ",".join(f"{x:.6g}" for x in vals)
 
 
+def is_valid(r):
+    try:
+        return float(r[IDX["valid"]]) == 1
+    except (TypeError, ValueError):
+        return False
+
+
 def main():
     a = parse_args()
     path = os.path.join(a.dir, f"buffer_full({a.label}).xlsx")
@@ -75,12 +81,16 @@ def main():
             continue
         if last_seq is not None and int(new[0][0]) > last_seq + 1:
             print(f"블록 사이 누락: seq {last_seq + 1}~{int(new[0][0]) - 1}", flush=True)
-        try:
-            payload = "\n".join(to_line(a.src, r) for r in new) + "\n"
-        except (TypeError, ValueError) as e:
-            print(f"값 변환 실패 ({e}), 블록 건너뜀", flush=True)
-            continue
-        sock.sendto(payload.encode(), dst)
+        usable = [r for r in new if is_valid(r)]
+        if len(usable) < len(new):
+            print(f"무효 행 {len(new) - len(usable)}개 건너뜀 (seq {int(new[0][0])}~{int(new[-1][0])})", flush=True)
+        if usable:
+            try:
+                payload = "\n".join(to_line(a.src, r) for r in usable) + "\n"
+            except (TypeError, ValueError) as e:
+                print(f"값 변환 실패 ({e}), 블록 건너뜀", flush=True)
+                continue
+            sock.sendto(payload.encode(), dst)
         last_seq = int(new[-1][0])
         n_blocks += 1
         if n_blocks % 30 == 1:

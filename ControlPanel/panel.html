@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BMS 고장 재현 콘솔</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  --plate: #c3c8bd;
+  --plate-light: #d3d7cd;
+  --plate-dark: #a4aa9e;
+  --seam: #878d81;
+  --ink: #222b27;
+  --ink-soft: #4d5750;
+  --glass: #17201b;
+  --glass-line: #2c3830;
+  --amber: #f5b53f;
+  --amber-dim: #8f7134;
+  --go: #2f9e5f;
+  --go-lit: #57e08d;
+  --halt: #bf3a2b;
+  --halt-lit: #ff6a55;
+  --warn: #d68a12;
+  --num: "DIN Alternate", "DIN Condensed", "Helvetica Neue", sans-serif;
+  --num-tall: "DIN Condensed", "DIN Alternate", "Arial Narrow", sans-serif;
+  --text: "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", "Noto Sans KR", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--plate-dark); }
+body { min-height: 100vh; color: var(--ink); font: 500 15px/1.45 var(--text); padding: 14px; }
+.panel {
+  max-width: 1320px; margin: 0 auto; background: var(--plate);
+  border: 1px solid var(--seam); border-radius: 3px;
+  box-shadow: inset 0 1px 0 var(--plate-light), 0 2px 0 var(--seam);
+}
+.engrave { text-shadow: 0 1px 0 rgba(255,255,255,.5); }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; padding: 14px 22px; border-bottom: 2px solid var(--seam); }
+h1 { margin: 0; font: 700 24px/1.1 var(--text); letter-spacing: -.01em; }
+.links { display: flex; gap: 18px; flex-wrap: wrap; }
+.link { display: flex; align-items: center; gap: 7px; font-size: 14px; color: var(--ink-soft); }
+.lamp { width: 12px; height: 12px; border-radius: 50%; background: #737a70; border: 1px solid #4e554e; box-shadow: inset 0 1px 2px rgba(0,0,0,.5); flex: none; }
+.lamp.on { background: var(--go-lit); box-shadow: 0 0 9px var(--go-lit); }
+.lamp.wait { background: var(--amber); box-shadow: 0 0 9px var(--amber); }
+.lamp.bad { background: var(--halt-lit); box-shadow: 0 0 9px var(--halt-lit); }
+.readout { background: var(--glass); color: var(--amber); margin: 16px 22px 0; border: 3px solid #39423b; border-radius: 3px; box-shadow: inset 0 2px 8px #000; padding: 12px 20px 14px; }
+.readout-top { display: flex; justify-content: space-between; gap: 12px; color: var(--amber-dim); font-size: 14px; }
+.readout-top b { color: var(--amber); font-weight: 600; }
+.values { display: grid; grid-template-columns: repeat(4, 1fr) 1.15fr .9fr 1fr; gap: 18px; align-items: end; margin-top: 4px; }
+.value { min-width: 0; border-left: 1px solid var(--glass-line); padding-left: 14px; }
+.value:first-child { border-left: 0; padding-left: 0; }
+.value label { display: block; color: var(--amber-dim); font-size: 13px; }
+.value output { display: block; font: 400 56px/1 var(--num-tall); font-variant-numeric: tabular-nums; }
+.value small { font-size: 20px; margin-left: 2px; color: var(--amber-dim); }
+.value.minor output { font-size: 42px; line-height: 1.33; }
+.delta { display: block; height: 18px; font: 400 15px/18px var(--num); color: var(--amber-dim); font-variant-numeric: tabular-nums; }
+.delta.big { color: var(--halt-lit); }
+.modules { display: grid; grid-template-columns: repeat(4, 1fr); margin: 16px 22px 0; border: 1px solid var(--seam); background: var(--seam); gap: 1px; }
+.module { position: relative; background: var(--plate); padding: 14px 16px 16px; display: flex; flex-direction: column; min-width: 0; box-shadow: inset 0 1px 0 var(--plate-light); }
+.module.active { background: var(--plate-light); }
+.module.muted .engrave, .module.muted .need { opacity: .62; }
+.module h2 { margin: 0; font: 700 20px/1.25 var(--text); }
+.module .state { margin: 0; color: var(--ink-soft); }
+.need { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0 0; min-height: 46px; font-size: 14px; line-height: 1.4; }
+.need .lamp { margin-top: 4px; }
+.params { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; min-height: 58px; }
+.params label { font-size: 13px; color: var(--ink-soft); }
+select { display: block; width: 100%; margin-top: 2px; height: 34px; font: 600 15px var(--text); color: var(--ink); background: var(--plate-light); border: 1px solid var(--seam); border-radius: 2px; padding: 0 6px; box-shadow: inset 0 1px 2px rgba(0,0,0,.2); }
+select:disabled { opacity: .6; }
+.fixed { grid-column: 1 / -1; font-size: 14px; color: var(--ink-soft); align-self: center; }
+.fixed b { display: block; color: var(--ink); font: 700 17px var(--text); }
+.hint { margin: 8px 0 8px; min-height: 21px; font-size: 13px; color: var(--ink-soft); }
+.keys { display: grid; grid-template-columns: 1.35fr 1fr; gap: 10px; margin-top: auto; padding-top: 12px; }
+.key {
+  --body: #636b64; --lit: #636b64; position: relative; height: 84px; border-radius: 5px; border: 0; cursor: pointer;
+  font: 700 21px var(--text); color: #eef1ea; background: linear-gradient(#73796f, #555b52);
+  box-shadow: 0 0 0 3px #3f4640, 0 0 0 4px #e0e3da, 0 5px 0 4px #3a403a;
+  transition: transform .06s, box-shadow .06s;
+}
+.key:not(:disabled):active { transform: translateY(4px); box-shadow: 0 0 0 3px #3f4640, 0 0 0 4px #e0e3da, 0 1px 0 4px #3a403a; }
+.key.go:not(:disabled) { background: linear-gradient(#33a768, #237a4a); }
+.key.stop:not(:disabled) { background: linear-gradient(#cd4333, #93291d); }
+.key:disabled { cursor: not-allowed; color: #aeb4a8; background: linear-gradient(#6a7067, #565c54); }
+.key.lit.go { background: radial-gradient(circle at 50% 40%, #9bf7bf, var(--go-lit) 35%, #2c9c5c); color: #06220f; box-shadow: 0 0 0 3px #3f4640, 0 0 0 4px #e0e3da, 0 5px 0 4px #3a403a, 0 0 26px var(--go-lit); }
+.key.lit.stop { box-shadow: 0 0 0 3px #3f4640, 0 0 0 4px #e0e3da, 0 5px 0 4px #3a403a; }
+:focus-visible { outline: 3px solid #0d4f9e; outline-offset: 5px; }
+select:focus-visible { outline-offset: 1px; }
+.pending .key.go { animation: breathe 1.4s ease-in-out infinite; }
+@keyframes breathe { 50% { filter: brightness(.72); } }
+.choice { position: absolute; top: 44px; left: 10px; right: 10px; z-index: 2; box-shadow: 0 3px 10px rgba(0,0,0,.3); padding: 10px 12px; background: #e9dcb8; border: 1px solid var(--warn); font-size: 14px; line-height: 1.45; }
+.choice button { display: block; width: 100%; margin-top: 7px; min-height: 36px; font: 600 14px var(--text); color: var(--ink); background: var(--plate-light); border: 1px solid var(--ink-soft); border-radius: 2px; cursor: pointer; }
+.choice button:hover { background: #fff; }
+.lower { display: grid; grid-template-columns: 1.55fr 1fr; gap: 0; margin: 16px 22px 22px; border: 1px solid var(--seam); }
+.progress { padding: 14px 18px; border-right: 1px solid var(--seam); min-width: 0; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); counter-reset: s; }
+.steps li { counter-increment: s; position: relative; padding-top: 34px; color: var(--ink-soft); font-size: 14px; line-height: 1.3; }
+.steps li::before { content: counter(s); position: absolute; top: 0; left: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--plate-dark); color: var(--ink); font: 400 16px/26px var(--num); text-align: center; z-index: 1; }
+.steps li::after { content: ""; position: absolute; top: 12px; left: 26px; right: 0; height: 2px; background: var(--seam); }
+.steps li:last-child::after { display: none; }
+.steps li.now { color: var(--ink); font-weight: 700; }
+.steps li.now::before { background: var(--amber); }
+.steps li.ok::before { background: var(--go); color: #fff; }
+.steps li.ok::after { background: var(--go); }
+.stats { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 26px; margin-top: 12px; font-size: 14px; color: var(--ink-soft); min-height: 21px; }
+.stats b { color: var(--ink); font-family: var(--num); font-weight: 400; font-size: 16px; font-variant-numeric: tabular-nums; }
+.bar { height: 7px; margin-top: 9px; background: var(--plate-dark); box-shadow: inset 0 1px 2px rgba(0,0,0,.35); }
+.bar i { display: block; height: 100%; width: 0; background: var(--ink); }
+.verdicts { display: grid; grid-template-columns: 1fr 1fr; }
+.verdict { padding: 14px 16px; border-left: 1px solid var(--seam); background: var(--plate-light); min-width: 0; }
+.verdict:first-child { border-left: 0; }
+.verdict p { margin: 0; color: var(--ink-soft); font-size: 14px; }
+.verdict strong { display: block; margin-top: 2px; font: 700 26px/1.2 var(--text); }
+.verdict.ok strong { color: #1d7a46; }
+.verdict.bad { background: var(--halt); }
+.verdict.bad p, .verdict.bad strong, .verdict.bad span { color: #fff; }
+.verdict span { display: block; margin-top: 3px; font-size: 14px; color: var(--ink-soft); }
+.alert { margin: 12px 22px 0; padding: 10px 14px; background: #f2d7cf; border-left: 6px solid var(--halt); font-weight: 600; }
+.alert[hidden] { display: none; }
+details { margin: 0 22px 18px; }
+summary { cursor: pointer; color: var(--ink-soft); font-size: 14px; padding: 4px 0; }
+.log { margin: 4px 0 0; padding: 10px 12px; background: var(--plate-light); border: 1px solid var(--seam); max-height: 190px; overflow: auto; font-size: 13px; line-height: 1.55; list-style: none; }
+.log time { color: var(--ink-soft); font-family: var(--num); margin-right: 8px; }
+.log .warn { color: #8f5a00; }
+.log .error { color: #a12a1c; font-weight: 700; }
+@media (max-width: 1060px) {
+  .modules { grid-template-columns: repeat(2, 1fr); }
+  .values { grid-template-columns: repeat(4, 1fr); }
+  .value:nth-child(5) { border-left: 0; padding-left: 0; }
+  .value output { font-size: 46px; }
+  .lower { grid-template-columns: 1fr; }
+  .progress { border-right: 0; border-bottom: 1px solid var(--seam); }
+}
+@media (max-width: 620px) {
+  body { padding: 0; }
+  .readout, .modules, .lower, .alert, details { margin-left: 12px; margin-right: 12px; }
+  .head { padding: 12px; }
+  .modules { grid-template-columns: 1fr; }
+  .values { grid-template-columns: repeat(2, 1fr); }
+  .value:nth-child(odd) { border-left: 0; padding-left: 0; }
+  .steps { grid-template-columns: repeat(2, 1fr); row-gap: 12px; }
+  .steps li:nth-child(2)::after { display: none; }
+  .need, .params, .hint { min-height: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pending .key.go { animation: none; }
+  .key { transition: none; }
+}
+</style>
+</head>
+<body>
+<main class="panel">
+  <header class="head">
+    <h1 class="engrave">BMS 고장 재현 콘솔</h1>
+    <div class="links" aria-label="연결 상태">
+      <span class="link engrave"><i class="lamp" id="lMatlab"></i><span id="tMatlab">MATLAB</span></span>
+      <span class="link engrave"><i class="lamp" id="lPi"></i><span id="tPi">라즈베리파이</span></span>
+      <span class="link engrave"><i class="lamp" id="lMon"></i><span id="tMon">AE 모니터</span></span>
+      <span class="link engrave"><i class="lamp" id="lPcb"></i><span id="tPcb">MCU</span></span>
+    </div>
+  </header>
+  <section class="readout" aria-label="셀 값">
+    <div class="readout-top"><span><b id="srcName">회로 실측</b></span><span id="srcNote">값 없음</span></div>
+    <div class="values">
+      <div class="value"><label>셀 1</label><output id="v0">-</output><span class="delta" id="d0"></span></div>
+      <div class="value"><label>셀 2</label><output id="v1">-</output><span class="delta" id="d1"></span></div>
+      <div class="value"><label>셀 3</label><output id="v2">-</output><span class="delta" id="d2"></span></div>
+      <div class="value"><label>셀 4</label><output id="v3">-</output><span class="delta" id="d3"></span></div>
+      <div class="value minor"><label>전류 (충전 +)</label><output id="vI">-</output><span class="delta"></span></div>
+      <div class="value minor"><label>최고 온도</label><output id="vT">-</output><span class="delta"></span></div>
+      <div class="value minor"><label>팩 전압</label><output id="vS">-</output><span class="delta"></span></div>
+    </div>
+  </section>
+  <p class="alert" id="alert" role="alert" hidden></p>
+  <section class="modules" id="modules" aria-label="시나리오"></section>
+  <section class="lower">
+    <div class="progress">
+      <ol class="steps" id="steps">
+        <li>회로 값 읽기</li><li>초기값 계산</li><li>MATLAB 재현</li><li>Pi·MCU로 전송</li>
+      </ol>
+      <div class="bar"><i id="barFill"></i></div>
+      <div class="stats" id="stats"></div>
+    </div>
+    <div class="verdicts">
+      <div class="verdict" id="vdPcb"><p>PCB 판정</p><strong id="vdPcbT">-</strong><span id="vdPcbS"></span></div>
+      <div class="verdict" id="vdAe"><p>AE 판정</p><strong id="vdAeT">-</strong><span id="vdAeS"></span></div>
+    </div>
+  </section>
+  <details><summary>진행 기록</summary><ul class="log" id="log"></ul></details>
+</main>
+<script>
+const SC = [
+  { id: "isc_drive", name: "Soft ISC 주행", need: "모터가 돌고 있어야 합니다", leak: true },
+  { id: "isc_rest", name: "Soft ISC 휴지", need: "모터를 끈 상태여야 합니다", leak: true },
+  { id: "isc_charge", name: "Soft ISC 충전", need: "충전 단자를 연결해 주세요", leak: true },
+  { id: "overcharge", name: "과충전", need: "충전 단자를 연결해 주세요" },
+];
+const FAULT = { 1: "과전압", 2: "저전압", 4: "방전 과전류", 8: "과열" };
+const $ = (id) => document.getElementById(id);
+const choices = {};
+const errors = {};
+function buildModules() {
+  $("modules").innerHTML = SC.map((s) => `
+    <article class="module" id="m_${s.id}">
+      <h2 class="engrave">${s.name}</h2>
+      <p class="need"><i class="lamp" id="c_${s.id}"></i><span id="n_${s.id}">${s.need}</span></p>
+      <div class="params">${s.leak ? `
+        <label>누설 셀<select id="cell_${s.id}">${[1,2,3,4].map((c) => `<option value="${c}" ${c === 2 ? "selected" : ""}>셀 ${c}</option>`).join("")}</select></label>
+      ` : `<p class="fixed">충전기 전압 고장<b>전압 제어·전류 제한 상실</b></p>`}</div>
+      <p class="hint" id="h_${s.id}"></p>
+      <div class="keys">
+        <button class="key go" id="go_${s.id}" type="button">시작</button>
+        <button class="key stop" id="st_${s.id}" type="button" disabled>중지</button>
+      </div>
+      <div id="ch_${s.id}"></div>
+    </article>`).join("");
+  SC.forEach((s) => {
+    $(`go_${s.id}`).onclick = () => start(s);
+    $(`st_${s.id}`).onclick = stop;
+    hint(s);
+  });
+}
+function hint(s) {
+  $(`h_${s.id}`).textContent = s.leak ? "5초에 누설 시작, 내부 단락으로 진행 (AE 경보 후 MCU 저전압 차단, 총 20초)" : "5초에 충전기 고장 (AE 경보 후 MCU 과전압 차단, 총 20초)";
+}
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  return { code: r.status, data: await r.json() };
+}
+async function start(s, extra = {}) {
+  errors.global = "";
+  $(`ch_${s.id}`).innerHTML = "";
+  const body = { scenario: s.id, ...extra };
+  if (s.leak) body.cell = +$(`cell_${s.id}`).value;
+  try {
+    const { code, data } = await post("/api/start", body);
+    if (code !== 200) errors.global = data.error;
+  } catch (e) { errors.global = "패널 서버에 연결하지 못했습니다. panel_server.py 가 켜져 있는지 확인해 주세요."; }
+  refresh();
+}
+async function stop() { try { await post("/api/stop"); } catch (e) { errors.global = "패널 서버에 연결하지 못했습니다."; } refresh(); }
+function setLamp(id, state) { $(id).className = "lamp " + (state || ""); }
+function conditionMet(id, live) {
+  if (!live || !live.fresh) return null;
+  if (id === "isc_drive") return live.I < -0.2;
+  if (id === "isc_rest") return Math.abs(live.I) < 0.2;
+  return live.I > 0.03;
+}
+function render(st) {
+  const pi = st.pi || {}, live = pi.live || {}, pcb = pi.pcb || {}, mon = pi.monitor || {}, se = st.session || {};
+  const phase = se.phase || "idle", running = phase !== "idle";
+  setLamp("lMatlab", st.matlab === "ready" ? "on" : st.matlab === "starting" ? "wait" : "bad");
+  $("tMatlab").textContent = st.matlab === "starting" ? "MATLAB 준비 중" : "MATLAB";
+  setLamp("lPi", st.pi_online ? "on" : "bad");
+  setLamp("lMon", st.pi_online && mon.online ? "on" : "bad");
+  setLamp("lPcb", st.pi_online && pcb.online ? "on" : "bad");
+  const f = se.frame, showFrame = !!f && (phase === "send" || phase === "done");
+  const src = showFrame ? f : (live.fresh ? live : null);
+  $("srcName").textContent = showFrame ? "보내는 값 (시뮬레이션)" : "회로 실측";
+  $("srcNote").textContent = showFrame ? "아래 작은 숫자 = 시작 값과의 차이"
+    : !st.pi_online ? "라즈베리파이 연결 없음" : live.fresh ? `${live.n}개 샘플 평균` : "회로 값이 들어오지 않습니다";
+  for (let k = 0; k < 4; k++) {
+    $(`v${k}`).innerHTML = src ? `${src.V[k].toFixed(3)}<small>V</small>` : "-";
+    const d = showFrame ? f.dV_mV[k] : null;
+    $(`d${k}`).textContent = d === null ? "" : `${d >= 0 ? "+" : ""}${d.toFixed(0)} mV`;
+    $(`d${k}`).className = "delta" + (d !== null && Math.abs(d) >= 15 ? " big" : "");
+  }
+  $("vI").innerHTML = src ? `${src.I >= 0 ? "+" : ""}${src.I.toFixed(2)}<small>A</small>` : "-";
+  $("vT").innerHTML = src ? `${Math.max(...src.T).toFixed(1)}<small>°C</small>` : "-";
+  $("vS").innerHTML = src && src.STACK != null ? `${src.STACK.toFixed(2)}<small>V</small>` : "-";
+  SC.forEach((s) => {
+    const m = $(`m_${s.id}`), mine = running && se.scenario === s.id, ok = conditionMet(s.id, live);
+    m.className = "module" + (mine ? " active" : running ? " muted" : "") + (mine && ["read", "init", "sim"].includes(phase) ? " pending" : "");
+    setLamp(`c_${s.id}`, mine ? "on" : ok === null ? "" : ok ? "on" : "wait");
+    $(`n_${s.id}`).textContent = mine ? phaseText(phase) : s.need;
+    const go = $(`go_${s.id}`), sp = $(`st_${s.id}`);
+    go.disabled = running; go.classList.toggle("lit", mine);
+    sp.disabled = !mine;
+    go.textContent = mine ? (phase === "done" ? "전송 완료" : phase === "send" ? "전송 중" : "준비 중") : "시작";
+    if (s.leak) $(`cell_${s.id}`).disabled = running;
+  });
+  const idx = { read: 0, init: 1, sim: 2, send: 3, done: 4 }[phase] ?? -1;
+  [...$("steps").children].forEach((li, i) => { li.className = idx > i ? "ok" : idx === i ? "now" : ""; });
+  const pct = se.total ? 100 * (se.sent || 0) / se.total : 0;
+  $("barFill").style.width = pct + "%";
+  const stats = [];
+  if (running && se.started) stats.push(`경과 <b>${Math.max(0, st.now - se.started).toFixed(0)} s</b>`);
+  if (se.total) stats.push(`보냄 <b>${((se.sent || 0) / 10).toFixed(1)} / ${(se.total / 10).toFixed(0)} s</b>`);
+  if (se.wall_s) stats.push(`계산 <b>${se.wall_s.toFixed(1)} s</b>`);
+  if (se.correction) stats.push(`시작 보정 <b>${se.correction.V_mV.map((x) => x.toFixed(0)).join(" / ")} mV</b>`);
+  $("stats").innerHTML = stats.length ? stats.join("") : "시나리오를 시작하면 진행 상황이 여기에 나옵니다.";
+  renderVerdict("vdPcb", "vdPcbT", "vdPcbS", pcbVerdict(st, pcb));
+  renderVerdict("vdAe", "vdAeT", "vdAeS", aeVerdict(st, mon));
+  const msg = errors.global || se.error || se.last_error || "";
+  $("alert").hidden = !msg; $("alert").textContent = msg;
+  const log = (st.log || []).slice().reverse();
+  $("log").innerHTML = log.map((l) => `<li class="${l.level}"><time>${l.t}</time>${l.text}</li>`).join("") || "<li>아직 기록이 없습니다.</li>";
+}
+function phaseText(p) {
+  return { read: "회로 값을 읽는 중입니다", init: "초기값을 계산하는 중입니다", sim: "MATLAB에서 재현하는 중입니다",
+           send: "Pi와 MCU로 보내는 중입니다", done: "모두 보냈습니다. 중지를 누르면 끝납니다" }[p] || "";
+}
+function pcbVerdict(st, p) {
+  if (!st.pi_online) return { t: "확인 불가", s: "라즈베리파이 연결 없음" };
+  if (!p.online) return { t: "연결 없음", s: "MCU가 응답하지 않습니다" };
+  if (p.fault_bits) {
+    const names = Object.keys(FAULT).filter((b) => p.fault_bits & +b).map((b) => FAULT[b]);
+    return { t: "폴트", s: (names.join(", ") || `코드 ${p.fault_bits}`) + ". 출력 차단됨, 중지를 누르면 해제됩니다", cls: "bad" };
+  }
+  return { t: "정상", s: p.stage ? `모터 동작 (단계 ${p.stage})` : "모터 정지", cls: "ok" };
+}
+function aeVerdict(st, m) {
+  if (!st.pi_online || !m.online) return { t: "확인 불가", s: "모니터 서버가 응답하지 않습니다" };
+  if (m.status === "ABNORMAL") return { t: "이상", s: m.fault_cell ? `셀 ${m.fault_cell} 의심` : "", cls: "bad" };
+  if (m.status === "NORMAL") return { t: "정상", s: "", cls: "ok" };
+  return { t: "대기", s: "입력을 모으는 중입니다" };
+}
+function renderVerdict(box, t, s, v) {
+  $(box).className = "verdict " + (v.cls || ""); $(t).textContent = v.t; $(s).textContent = v.s || "";
+}
+async function refresh() {
+  try {
+    const r = await fetch("/api/state", { cache: "no-store" });
+    render(await r.json());
+  } catch (e) {
+    $("alert").hidden = false;
+    $("alert").textContent = "패널 서버에 연결하지 못했습니다. panel_server.py 가 켜져 있는지 확인해 주세요.";
+  }
+}
+buildModules();
+refresh();
+setInterval(refresh, 400);
+</script>
+</body>
+</html>
