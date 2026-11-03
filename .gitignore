@@ -219,19 +219,19 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# AI_AutoEncoder: 원본 시뮬레이션·전처리 산출물·재학습 결과는 저장소에 넣지 않음
-AI_AutoEncoder/raw/
-AI_AutoEncoder/data/*.npz
-AI_AutoEncoder/data/meta_*.csv
-AI_AutoEncoder/5_weights/AE_retrain/
+# AI_AutoEncoder(RaspberryPi): 원본 시뮬레이션·전처리 산출물·재학습 결과는 저장소에 넣지 않음
+AI_AutoEncoder(RaspberryPi)/raw/
+AI_AutoEncoder(RaspberryPi)/data/*.npz
+AI_AutoEncoder(RaspberryPi)/data/meta_*.csv
+AI_AutoEncoder(RaspberryPi)/5_weights/AE_retrain/
 .DS_Store
-AI_AutoEncoder/RaspberryPi/monitor/runtime/
-AI_AutoEncoder/RaspberryPi/relay/data*/
-AI_AutoEncoder/RaspberryPi/relay/buffer/
-AI_AutoEncoder/RaspberryPi/relay/logs/
+AI_AutoEncoder(RaspberryPi)/RaspberryPi/monitor/runtime/
+AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay/data*/
+AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay/buffer/
+AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay/logs/
 
 # 컨트롤 패널 실행 기록
 ControlPanel/runtime/
-AI_AutoEncoder/RaspberryPi/relay/label.txt
+AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay/label.txt
 MCU/build/
 MCU/firmware/

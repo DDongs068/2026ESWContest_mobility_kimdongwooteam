@@ -5,7 +5,7 @@ Mac에서 실행합니다. 시작을 누른 순간의 실측값으로 MATLAB 디
 ## 실행
 
 ```bash
-bash ../AI_AutoEncoder/RaspberryPi/monitor/run.sh   # 먼저 모니터
+bash "../AI_AutoEncoder(RaspberryPi)/RaspberryPi/monitor/run.sh"   # 먼저 모니터
 zsh run.sh                                          # 패널 → http://127.0.0.1:8060 (처음에는 MATLAB 준비에 약 1 분)
 zsh stop.sh                                         # 종료
 ```
