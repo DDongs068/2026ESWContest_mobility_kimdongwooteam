@@ -1,11 +1,12 @@
+# Pi 계정이 pi 가 아니면 pi 와 /home/pi 를 바꿔 주세요.
 [Unit]
 Description=PCB -> Pi measurement receiver (UDP 5001)
 After=network.target NetworkManager.service
 
 [Service]
-User=rpi4
-WorkingDirectory=/home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay
-ExecStart=/usr/bin/python3 -u /home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay/receiver.py
+User=pi
+WorkingDirectory=/home/pi/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay
+ExecStart=/usr/bin/python3 -u /home/pi/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay/receiver.py
 Restart=always
 RestartSec=2
 
