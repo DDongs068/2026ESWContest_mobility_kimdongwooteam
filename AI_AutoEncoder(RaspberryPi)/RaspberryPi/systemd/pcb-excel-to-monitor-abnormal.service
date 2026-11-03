@@ -1,10 +1,11 @@
+# Pi 계정이 pi 가 아니면 pi 와 /home/pi 를 바꿔 주세요.
 [Unit]
 Description=Excel(abnormal) 10-row blocks -> AE monitor (UDP 5005)
 After=pcb-calc-buffer-abnormal.service aibms-monitor.service
 
 [Service]
-WorkingDirectory=/home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay
-ExecStart=/usr/bin/python3 -u /home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay/excel_to_monitor.py --label 비정상 --src MAC
+WorkingDirectory=/home/pi/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay
+ExecStart=/usr/bin/python3 -u /home/pi/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay/excel_to_monitor.py --label 비정상 --src MAC
 Restart=always
 RestartSec=3
 

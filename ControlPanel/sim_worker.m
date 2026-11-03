@@ -1,6 +1,9 @@
 clearvars; clc;
 
-WORK_DIR   = '/절대경로/model_work_w2';
+% 팀 Simulink 모델(AI_BMS_4S.slx)이 있는 폴더의 절대 경로를 넣어 주세요.
+% WORK_DIR = '/절대경로/model_work_w2';
+WORK_DIR   = '';
+if isempty(WORK_DIR), error('sim_worker.m 의 WORK_DIR 에 팀 Simulink 모델 폴더 경로를 넣어 주세요.'); end
 RUN_DIR    = fullfile(fileparts(mfilename('fullpath')), 'runtime');
 CACHE_DIR  = fullfile(RUN_DIR, 'sim_cache');
 JOB_DIR    = fullfile(RUN_DIR, 'jobs');
