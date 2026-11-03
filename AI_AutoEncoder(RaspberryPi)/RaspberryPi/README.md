@@ -10,7 +10,7 @@ Pi는 측정값을 받아 1 s마다 이 AE로 정상 / 이상을 판정하고 �
 ```mermaid
 flowchart LR
     MCU["MCU (STM32G474)<br/>BQ76922 측정 10 Hz"] -- "UDP 5001" --> RX["relay/receiver.py<br/>수신 · CSV 기록"]
-    PANEL["Mac 컨트롤 패널<br/>../../ControlPanel"] -- "USB UDP 5020" --> AG["control_panel/pi_agent.py"]
+    PANEL["Mac 컨트롤 패널<br/>../../ControlPanel"] -- "USB UDP 5020 · HTTP 8061" --> AG["control_panel/pi_agent.py"]
     AG -- "UDP 5013" --> RX2["relay/receiver.py<br/>(비정상)"]
     RX --> BUF["relay/calc_buffer.py<br/>엑셀 버퍼 (10행)"]
     RX2 --> BUF
@@ -44,7 +44,7 @@ RaspberryPi/
 
 ## 설치
 
-저장소를 Pi의 `/home/rpi4/2026ESWContest_mobility_kimdongwooteam`에 둡니다. 서비스 파일이 이 경로를 씁니다.
+저장소를 Pi의 `/home/pi/2026ESWContest_mobility_kimdongwooteam`에 둡니다. 서비스 파일이 이 경로를 씁니다. Pi 계정이 `pi`가 아니면 서비스 파일과 `monitor/run.sh`, `../../ControlPanel/start.sh`·`stop.sh`, `../../test.sh`의 계정과 경로를 바꿔 주세요.
 
 ```bash
 # 유선: MCU 가 192.168.50.2 에서 온 패킷만 받습니다
@@ -99,7 +99,9 @@ ON은 응답이 없어도 다시 보내지 않고 `STATUS`로 확인하며, 4 s 
 |---|---|
 | `GET /` · `GET /buffer` | 모니터 화면 · 입력 버퍼 시트 |
 | `GET /api/state` | 현재 판정 상태, 이상도, MCU 상태 (JSON) |
+| `GET /api/buffer` · `GET /api/link` | 입력 버퍼 내용 · 수신 품질 (JSON) |
 | `POST /api/control` | `{"action": "start" \| "stop" \| "reset", "mode": "normal" \| "abnormal"}` |
+| `POST /api/ingest` | `{"samples": [...]}` 샘플 직접 입력 |
 | `POST /api/motor` | `{"action": "drive_start" \| "drive_stop" \| "motor_on" \| "motor_off" \| "charge_on" \| "charge_off"}` |
 | `POST /api/mcu` | Pi 내부 전용 MCU 창구. `STATUS`, `START`, `SIM ...`만 허용 (출력을 켜는 명령은 거부) |
 

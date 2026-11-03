@@ -10,6 +10,7 @@
 flowchart LR
     subgraph HW["배터리 · 회로"]
         PACK["배터리 팩<br/>4S1P Samsung 35E"] --> BQ["BQ76922<br/>셀 전압·온도·전류 측정<br/>하드웨어 보호"]
+        LOAD["모터 2채널 · 충전 (BQ24610)"]
     end
     subgraph FW["MCU/ — STM32G474 펌웨어"]
         DRV["bq76922.c<br/>BMIC 드라이버"] --> APP["bms_app.c<br/>100 ms 측정 · 부하/충전/밸런싱"]
@@ -20,8 +21,8 @@ flowchart LR
     subgraph PI["Raspberry Pi 5 — AI_AutoEncoder(RaspberryPi)/RaspberryPi/"]
         RX["relay/receiver.py<br/>측정 수신 · 기록 · 엑셀 버퍼"] --> AE["monitor/monitor_server.py<br/>AE 판정 · 1 s 마다<br/>(3_model + 5_weights/AE)"]
         AE --> UI["모니터 UI<br/>판정 · 모터/충전 버튼"]
-        AG["control_panel/pi_agent.py<br/>패널 대리인"] --> RX
-        AG --> AE
+        AG["control_panel/pi_agent.py<br/>패널 대리인"] -- "UDP 5013 고장 재현 값" --> RX
+        AG -- "SIM 전달" --> AE
     end
     subgraph MAC["Mac — ControlPanel/"]
         CP["패널 + MATLAB 워커<br/>실측으로 초기화해 고장 재현"]
@@ -32,9 +33,10 @@ flowchart LR
         W --> EV["4_eval<br/>평가"]
     end
     BQ -- "I²C" --> DRV
+    APP -- "제어 · 폴트 시 차단" --> LOAD
     ETH -- "UDP 5001 측정 (10 Hz)" --> RX
     AE -- "UDP 5002 명령 · SIM" --> ETH
-    CP -- "USB UDP 5020 고장 재현 값" --> AG
+    CP -- "USB UDP 5020 고장 재현 값 · HTTP 8061 실측 스냅샷" --> AG
     W -. "Pi 에 올려 실행" .-> AE
 ```
 

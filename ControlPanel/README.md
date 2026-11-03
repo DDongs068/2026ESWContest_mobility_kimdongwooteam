@@ -12,7 +12,7 @@ zsh stop.sh                                         # 종료
 
 Mac과 Pi가 USB(`10.55.0.2`)로 연결되어 있어야 합니다. MATLAB R2025b에서 실행했습니다.
 
-**팀 Simulink 모델은 이 저장소에 없습니다.** `sim_worker.m`의 `WORK_DIR`을 모델 폴더(`AI_BMS_4S.slx`, `aibms_parameters.m`, `aibms_scenario.m`)로 지정해 주세요.
+**팀 Simulink 모델은 이 저장소에 없습니다.** 처음에 `sim_worker.m` 맨 위의 `WORK_DIR`에 모델 폴더(`AI_BMS_4S.slx`, `aibms_parameters.m`, `aibms_scenario.m`) 경로를 넣어 주세요. 비어 있으면 워커가 안내 문구를 내고 멈춥니다. `start.sh`, `stop.sh`의 Pi 계정도 환경에 맞게 바꿔 주세요.
 
 ## 시나리오
 

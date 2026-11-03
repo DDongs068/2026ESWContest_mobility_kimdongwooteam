@@ -34,7 +34,7 @@ AI_AutoEncoder(RaspberryPi)/
 │   ├── eval.py                  평가 (confusion matrix · 오경보 · 탐지 지연 · HW 보호 대비)
 │   └── results/                 평가 결과
 ├── 5_weights/AE/                학습된 가중치 (충전 chg · 주행 dis · 휴지 rest) + threshold.json
-├── RaspberryPi/                 Pi 5 에서 실행: AE 판정 서버 · 모니터 UI · 통신 코드 · 자동 실행 서비스
+├── RaspberryPi/                 Pi 5 에서 실행: AE 판정 서버 · 모니터 UI · 통신 코드 · 패널 대리인 · 자동 실행 서비스
 └── data/split_runs.csv          run 단위 학습 / 검증 / 테스트 분할
 ```
 

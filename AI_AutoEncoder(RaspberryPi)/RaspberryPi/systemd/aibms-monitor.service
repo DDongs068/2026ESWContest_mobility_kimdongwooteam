@@ -1,10 +1,11 @@
+# Pi 계정이 pi 가 아니면 pi 와 /home/pi 를 바꿔 주세요.
 [Unit]
 Description=AE monitor: AI_AutoEncoder(RaspberryPi) model on Raspberry Pi (UDP 5005 -> 1 s decision -> web UI 8050)
 After=network.target
 
 [Service]
-WorkingDirectory=/home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/monitor
-ExecStart=/usr/bin/python3 -u /home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/monitor/monitor_server.py
+WorkingDirectory=/home/pi/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/monitor
+ExecStart=/usr/bin/python3 -u /home/pi/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/monitor/monitor_server.py
 Restart=always
 RestartSec=3
 

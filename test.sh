@@ -9,7 +9,8 @@ import time
 import urllib.error
 import urllib.request
 
-PI: str = "rpi4@10.55.0.2"
+# Pi 계정이 pi 가 아니면 pi 와 /home/pi 를 바꿔 주세요.
+PI: str = "pi@10.55.0.2"
 PI_IP: str = "10.55.0.2"
 MCU_IP: str = "192.168.50.10"
 MCU_MAC: str = "02:42:4d:53:00:01"
@@ -20,7 +21,7 @@ PANEL: str = "http://127.0.0.1:8060"
 PANEL_DIR: str = os.path.join(os.environ["AIBMS_ROOT"], "ControlPanel")
 JOB_DIR: str = f"{PANEL_DIR}/runtime/jobs"
 READY_FILE: str = f"{PANEL_DIR}/runtime/worker.ready"
-DATA_DIR: str = "/home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay/data"
+DATA_DIR: str = "/home/pi/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay/data"
 ACTIVE_SYSTEM: list[str] = ["pcb-receiver"]
 ACTIVE_USER: list[str] = ["pcb-calc-buffer", "pcb-calc-buffer-abnormal", "pcb-excel-to-w10",
                           "pcb-excel-to-w10-abnormal", "pcb-receiver-abnormal"]
