@@ -1,21 +1,27 @@
 #include "ethernet_test.h"
 #include "bms_app.h"
 #include "main.h"
-#include "demo_stream.h"
-#include "safety_supervisor.h"
+#include "bms_demo.h"
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 
-volatile Ethernet_Control g_eth_control;
+typedef struct {
+    uint8_t ip[4],peer_ip[4],subnet[4],gateway[4],mac[6];
+    uint16_t local_port,peer_port,motor_port;
+} Ethernet_Config;
+static const Ethernet_Config active={
+    .ip={192,168,50,10},.peer_ip={192,168,50,2},.subnet={255,255,255,0},
+    .gateway={0,0,0,0},.mac={0x02,0x42,0x4D,0x53,0x00,0x01},
+    .local_port=5000,.peer_port=5001,.motor_port=5002
+};
 volatile Ethernet_Status g_eth;
-static Ethernet_Control active;
-static uint32_t last_attempt, pending_tick, last_init, last_link;
+static uint32_t pending_tick,last_init,last_link,last_sent_sample,pending_sample;
 static int init_attempted;
-static uint32_t motor_revision, motor_pending_tick, motor_reply_id;
+static uint32_t motor_revision,motor_pending_tick,motor_reply_id;
 static uint16_t motor_reply_port;
-static int motor_pending, motor_reply_wait, motor_reply_result;
+static int motor_pending,motor_reply_wait,motor_reply_result;
 static int motor_setup(void);
 static int motor_update(void);
 
@@ -59,7 +65,6 @@ static int setup(void)
 {
     uint8_t version, status, check[18], network[18];
     int rc;
-    active = g_eth_control;
     g_eth.ready = g_eth.pending = g_eth.link_up = 0;
     Board_EthernetReset();
     if (read_bytes(0, 0x39, &version, 1)) return -1;
@@ -72,6 +77,7 @@ static int setup(void)
     if (write_bytes(0, 1, network, sizeof network) ||
         read_bytes(0, 1, check, sizeof check)) return -1;
     if (memcmp(check, network, sizeof check)) return -7;
+
     const uint8_t retry[3] = {0x07, 0xD0, 1};
     if (write_bytes(0, 0x19, retry, 3)) return -1;
     rc = command(0x10);
@@ -110,6 +116,7 @@ static int rx_read(uint16_t pointer, uint8_t *data, uint16_t length)
 
 static int receive_ai(void)
 {
+
     for (unsigned packet = 0u; packet < 4u; ++packet) {
         uint16_t size1 = 0u, size2 = 0u, pointer, length;
         uint8_t header[8], message[6];
@@ -121,12 +128,12 @@ static int receive_ai(void)
         if (!stable || size1 < sizeof header) return 0;
         if (size1 > 2048u) return -8;
         if (read16(0x28u, &pointer) || rx_read(pointer, header, sizeof header)) return -1;
+
         length = get16(header + 6);
         if (length > 2040u) return -8;
         if ((uint32_t)length + sizeof header > size1) return 0;
         result = 1;
-        if (!g_eth_control.ai_rx_enable) result = 3;
-        else if (memcmp(header, active.peer_ip, 4)) result = 2;
+        if (memcmp(header, active.peer_ip, 4)) result = 2;
         else if (length >= 4u && length <= sizeof message) {
             if (rx_read((uint16_t)(pointer + 8u), message, length)) return -1;
             if (!memcmp(message, "AI:", 3) &&
@@ -135,17 +142,18 @@ static int receive_ai(void)
                  (length == 6u && message[4] == '\r' && message[5] == '\n')))
                 result = 0;
         }
+
         if (write16(0x28u, (uint16_t)(pointer + 8u + length))) return -1;
         int rc = command(0x40u);
         if (rc) return rc;
         g_eth.last_rx_result = result;
         if (result) ++g_eth.rx_rejected;
         else {
-            if (message[3] == '1') Safety_Trip(SAFE_AI);
-            if (message[3] == '1' && !g_control.ai_alarm) {
-                g_control.off = 1u; ++motor_revision;
+
+            if (message[3] == '1' && !g_bms.ai_alarm) {
+                BMS_StopAllOutputs(); ++motor_revision;
             }
-            g_control.ai_alarm = (uint32_t)(message[3] - '0');
+            g_bms.ai_alarm = (uint32_t)(message[3] - '0');
             g_eth.ai_rx_received = 1u;
             g_eth.last_ai_tick = HAL_GetTick();
             ++g_eth.rx_count;
@@ -202,6 +210,7 @@ static int mring(uint16_t pointer, uint8_t *data, uint16_t length, int write)
                                                 data+first, (uint16_t)(length-first))) return -1;
     return 0;
 }
+
 static int decimal(const char **input, uint32_t *value)
 {
     const char *p = *input;
@@ -218,7 +227,7 @@ static int motor_receive(void)
 {
     for (unsigned n=0; n<4; ++n) {
         uint16_t size1=0, size2=0, pointer, length;
-        uint8_t header[8]; char message[224];
+        uint8_t header[8]; char message[256];
         int stable=0;
         for (unsigned i=0; i<4; ++i) {
             if (mread16(0x26, &size1) || mread16(0x26, &size2)) return -1;
@@ -230,62 +239,51 @@ static int motor_receive(void)
         length=get16(header+6);
         if (length>2040u) return -8;
         if ((uint32_t)length+8u>size1) return 0;
-        int readable=g_eth_control.motor_rx_enable && !memcmp(header,active.peer_ip,4) &&
+        int readable=!memcmp(header,active.peer_ip,4) &&
             length>0 && length<sizeof message;
         if (readable) {
             if (mring((uint16_t)(pointer+8u), (uint8_t *)message, length, 0)) return -1;
+
             if (memchr(message,0,length)) readable=0;
             message[length]=0;
         }
         if (mwrite16(0x28,(uint16_t)(pointer+8u+length))) return -1;
         int rc=mcommand(0x40); if (rc) return rc;
-        if (!readable || strncmp(message,"MC1 ",4)) continue;
+        if (!readable) continue;
+        if (strncmp(message,"MC1 ",4)) {++g_eth.rx_rejected;continue;}
         const char *p=message+4; uint32_t id, revision;
         if (decimal(&p,&id) || *p++!=' ') continue;
         int result=0;
         if (!strcmp(p,"STATUS")) {   }
-        else if (!strcmp(p,"ACK")) result=Safety_Rearm();
-        else if (!strcmp(p,"STREAM ON")) g_eth_control.enable=1;
-        else if (!strcmp(p,"STREAM OFF")) g_eth_control.enable=0;
-        else if (!strcmp(p,"BALANCE OFF")) g_balance.stop=1;
-        else if (!strcmp(p,"BALANCE ON")) {
-            if (Safety_CanEnable() || g_control.ai_alarm ||
-                g_control.off || g_bms.stage || g_bms.power_gpio_mask) result=-50;
-            else g_balance.start=1;
+        else if (!strcmp(p,"START")) result=BMS_SetStarted(1);
+        else if (!strcmp(p,"STOP")) {
+            ++motor_revision;result=BMS_SetStarted(0);
         }
-        else if (!strcmp(p,"REPLAY STOP")) { ++motor_revision; Demo_Stop(); }
-        else if (!strncmp(p,"REPLAY START ",13)) {
-            p+=13; uint32_t session;
-            if (decimal(&p,&session) || *p) continue;
-            if (!g_demo.mode || g_demo.session!=session) ++motor_revision;
-            result=Demo_Start(session); g_eth_control.enable=1;
-        }
-        else if (!strncmp(p,"REPLAY FRAME ",13)) result=Demo_ReceiveHex(p+13);
-        else if (!strncmp(p,"RESULT ",7)) {
-            uint32_t session,sequence,alarm; p+=7;
-            if (decimal(&p,&session) || *p++!=' ' || decimal(&p,&sequence) ||
-                *p++!=' ' || decimal(&p,&alarm) || *p || alarm>1u) continue;
-            if (!g_eth_control.ai_rx_enable || !g_demo.mode || !g_demo.valid || session!=g_demo.session ||
-                sequence>g_demo.last_sequence || g_demo.last_sequence-sequence>100u) result=-44;
-            else {
-                if (alarm) Safety_Trip(SAFE_AI);
-                if (alarm && !g_control.ai_alarm) { g_control.off=1; ++motor_revision; }
-                g_control.ai_alarm=alarm;
-                g_eth.ai_rx_received=1; g_eth.last_ai_tick=HAL_GetTick();
-            }
+        else if (!strcmp(p,"SIM CLEAR") || !strcmp(p,"FAULT CLEAR")) BMS_DemoClear();
+        else if (!strncmp(p,"SIM ",4)) {
+            uint32_t was=g_demo.fault;
+            result=BMS_DemoReceive(p+4);
+            if (!was && g_demo.fault) ++motor_revision;
         }
         else if (!strcmp(p,"OFF")) {
-            ++motor_revision; g_control.off=1u;
-        } else if (!strncmp(p,"ON ",3)) {
-            p+=3;
-            if (decimal(&p,&revision) || *p) continue;
-            if (revision!=motor_revision) result=-30;
-            else if (Safety_CanEnable()) result=-50;
-            else {
-                ++motor_revision;
-                result=BMS_RemoteMotorOn();
-            }
-        } else continue;
+            ++motor_revision; BMS_StopAllOutputs();
+        } else {
+            BMS_Output output=BMS_OUTPUT_MOTOR;
+            if (!strncmp(p,"FET ",4)) {output=BMS_OUTPUT_FET;p+=4;}
+            else if (!strncmp(p,"MOTOR ",6)) {output=BMS_OUTPUT_MOTOR;p+=6;}
+            else if (!strncmp(p,"CHARGE ",7)) {output=BMS_OUTPUT_CHARGE;p+=7;}
+            if (!strcmp(p,"OFF")) {
+                ++motor_revision;result=BMS_RequestOutput(output,0);
+            } else if (!strncmp(p,"ON ",3)) {
+                p+=3;
+                if (decimal(&p,&revision) || *p) continue;
+                if (revision!=motor_revision) result=-30;
+                else {
+                    ++motor_revision;
+                    result=BMS_RequestOutput(output,1);
+                }
+            } else continue;
+        }
         motor_reply_id=id; motor_reply_port=get16(header+4);
         motor_reply_result=result; motor_reply_wait=1;
     }
@@ -296,6 +294,7 @@ static int motor_update(void)
     uint8_t status;
     if (read_bytes(5,3,&status,1)) return -1;
     if (status!=0x22u) return motor_setup();
+
     int rc=motor_receive(); if (rc) return rc;
     uint32_t now=HAL_GetTick();
     if (motor_pending) {
@@ -313,31 +312,33 @@ static int motor_update(void)
     if (b.data_valid && !b.sample_result && isfinite(b.sensor.pack_V) &&
         b.sensor.pack_V>=0 && b.sensor.pack_V<100.0f)
         pack_mv=(int32_t)(b.sensor.pack_V*1000.0f+0.5f);
-    uint8_t data[640];
+    uint8_t data[1024];
     int count=snprintf((char *)data,sizeof data,
         "{\"id\":%lu,\"rc\":%d,\"rev\":%lu,\"remote\":%ld,\"stage\":%lu,"
         "\"m1\":%ld,\"m2\":%ld,\"gpio\":%u,\"ai\":%lu,\"estop\":%u,"
         "\"fault\":%u,\"fet\":%u,\"valid\":%u,\"pack_mV\":%ld,"
         "\"sample_rc\":%d,\"fet_on_rc\":%d,\"fet_off_rc\":%d,"
-        "\"safe_active\":%lu,\"safe_latched\":%lu,\"replay\":%lu,\"session\":%lu,"
-        "\"queued\":%lu,\"played\":%lu,\"demo_rc\":%ld,\"baseline\":%lu,"
-        "\"pa\":%u,\"pb\":%u,\"profile_rc\":%ld,\"bal_mask\":%lu,"
-        "\"bal_rc\":%ld,\"bal_run\":%lu}\n",
+        "\"started\":%lu,\"charge_req\":%lu,\"charge_on\":%lu,\"charge_rc\":%ld,"
+        "\"fet_ready\":%lu,\"sim_active\":%lu,\"sim_fault\":%lu,\"sim_mode\":%lu,"
+        "\"algo\":%lu,\"sim_rc\":%ld,\"sim_frames\":%lu,\"sim_seq\":%lu,\"sim_ms\":%lu,"
+        "\"sim_bits\":%lu,\"first_fault_ms\":%lu}\n",
         (unsigned long)motor_reply_id,motor_reply_result,(unsigned long)motor_revision,
-        (long)b.remote_motor_result,(unsigned long)b.stage,
+        (long)b.motor_result,(unsigned long)b.stage,
         (long)g_motor.pwm1_permille,(long)g_motor.pwm2_permille,(unsigned)b.power_gpio_mask,
-        (unsigned long)g_control.ai_alarm,(unsigned)b.estop_ok,(unsigned)b.motor_fault_mask,
+        (unsigned long)b.ai_alarm,(unsigned)b.estop_ok,(unsigned)b.motor_fault_mask,
         (unsigned)b.sensor.fet_status,(unsigned)b.data_valid,(long)pack_mv,
         b.sample_result,b.fet_on_result,b.fet_off_result,
-        (unsigned long)g_safety.active,(unsigned long)g_safety.latched,
-        (unsigned long)g_demo.mode,(unsigned long)g_demo.session,
-        (unsigned long)g_demo.queued,(unsigned long)g_demo.played,
-        (long)g_demo.last_result,(unsigned long)g_demo.baseline_flags,
-        (unsigned)g_safety.profile.enabled[0],(unsigned)g_safety.profile.enabled[1],
-        (long)g_safety.profile_result,(unsigned long)g_balance.active_mask,
-        (long)g_balance.result,(unsigned long)g_balance.running);
+        (unsigned long)g_demo.started,(unsigned long)g_control.charge_on,
+        (unsigned long)g_charge.command_enabled,(long)g_charge.result,
+        (unsigned long)b.fet_enabled,(unsigned long)g_demo.active,
+        (unsigned long)g_demo.fault,(unsigned long)g_demo.emergency,
+        (unsigned long)g_demo.algorithm_available,(long)g_demo.decision_result,
+        (unsigned long)g_demo.accepted,(unsigned long)g_demo.last_sequence,
+        (unsigned long)g_demo.source_ms,(unsigned long)g_demo.fault_bits,
+        (unsigned long)g_demo.first_fault_ms);
     if (count<0 || count>=(int)sizeof data) return -9;
     uint16_t free1,free2,pointer;
+
     if (mread16(0x20,&free1) || mread16(0x20,&free2)) return -1;
     if (free1!=free2 || free1<(unsigned)count) return 0;
     if (write_bytes(5,0x0C,active.peer_ip,4) || mwrite16(0x10,motor_reply_port) ||
@@ -355,12 +356,9 @@ static int32_t scaled(float value, float factor)
     if (!isfinite(v) || v > INT32_MAX || v <= INT32_MIN) return INT32_MIN;
     return (int32_t)(v < 0 ? v - 0.5 : v + 0.5);
 }
-uint16_t Ethernet_Test_Encode(uint8_t p[ETH_TEST_PACKET_SIZE], uint32_t sequence)
+uint16_t Ethernet_Encode(uint8_t p[ETH_TEST_PACKET_SIZE], uint32_t sequence)
 {
     BMS_Status b = g_bms;
-    uint32_t balance=(g_balance.active_mask&7u)|((g_balance.active_mask&16u)>>1);
-    int replay=Demo_Sample(&b,&balance);
-    int v2=g_eth_control.telemetry_v2 || replay;
     int32_t values[12];
     unsigned valid = b.data_valid && b.sample_result == 0;
     for (unsigned i = 0; i < 4; ++i) {
@@ -372,15 +370,12 @@ uint16_t Ethernet_Test_Encode(uint8_t p[ETH_TEST_PACKET_SIZE], uint32_t sequence
     values[10] = scaled(b.sensor.pack_V, 1000);
     values[11] = scaled(b.sensor.ld_V, 1000);
     for (unsigned i = 0; i < 12; ++i) if (values[i] == INT32_MIN) valid = 0;
-    int n;
-    if (v2) n=snprintf((char *)p,ETH_TEST_PACKET_SIZE,"BMS2,%u,%lu,%lu,%lu,%u",
-        replay?1u:0u,(unsigned long)(replay?g_demo.session:0u),
-        (unsigned long)(replay?g_demo.last_sequence:sequence),(unsigned long)b.sample_tick,valid);
-    else n=snprintf((char *)p,ETH_TEST_PACKET_SIZE,"%lu,%lu,%u",
-        (unsigned long)sequence,(unsigned long)b.sample_tick,valid);
+    int n = snprintf((char *)p, ETH_TEST_PACKET_SIZE, "%lu,%lu,%u",
+                     (unsigned long)sequence, (unsigned long)b.sample_tick, valid);
     if (n < 0 || n >= (int)ETH_TEST_PACKET_SIZE) return 0;
     unsigned used = (unsigned)n;
     for (unsigned i = 0; i < 12; ++i) {
+
         uint32_t magnitude = values[i] < 0 ? (uint32_t)(-(int64_t)values[i]) : (uint32_t)values[i];
         if (!valid) n = snprintf((char *)p + used, ETH_TEST_PACKET_SIZE-used, ",NA");
         else n = snprintf((char *)p + used, ETH_TEST_PACKET_SIZE-used, ",%s%lu.%03lu",
@@ -389,104 +384,73 @@ uint16_t Ethernet_Test_Encode(uint8_t p[ETH_TEST_PACKET_SIZE], uint32_t sequence
         if (n < 0 || (unsigned)n >= ETH_TEST_PACKET_SIZE-used) return 0;
         used += (unsigned)n;
     }
-    if (v2) {
-        n=snprintf((char *)p+used,ETH_TEST_PACKET_SIZE-used,
-            ",%u,%u,%u,%u,%lu,%lu,%lu,%lu,%lu,%lu",
-            (unsigned)(balance&1u),(unsigned)((balance>>1)&1u),
-            (unsigned)((balance>>2)&1u),(unsigned)((balance>>3)&1u),
-            (unsigned long)(replay?g_demo.baseline_flags:0u),
-            (unsigned long)(replay?g_demo.spec_overcharge:0u),
-            (unsigned long)g_safety.active,(unsigned long)g_safety.latched,
-            (unsigned long)g_control.ai_alarm,(unsigned long)g_safety.fet);
-        if (n<0 || (unsigned)n>=ETH_TEST_PACKET_SIZE-used) return 0;
-        used+=(unsigned)n;
-    }
     if (used + 1u >= ETH_TEST_PACKET_SIZE) return 0;
     p[used++] = '\n'; p[used] = 0;
     return (uint16_t)used;
 }
 
-void Ethernet_Test_Init(void)
+void Ethernet_Init(void)
 {
-    g_eth_control = (Ethernet_Control){.enable=1, .period_ms=100, .ai_rx_enable=1, .telemetry_v2=1, .motor_rx_enable=1, .motor_port=5002,
-        .ip={192,168,10,20}, .peer_ip={192,168,10,1}, .subnet={255,255,255,0},
-        .gateway={192,168,10,1}, .mac={0x02,0x42,0x4D,0x53,0x00,0x01},
-        .local_port=5000, .peer_port=5001};
-    g_eth = (Ethernet_Status){0};
-    Demo_Init();
-    motor_revision=0; motor_pending=motor_reply_wait=0;
-    last_attempt = HAL_GetTick()-g_eth_control.period_ms;
-    last_init = last_link = 0; init_attempted = 0;
+    g_eth=(Ethernet_Status){0};
+    motor_revision=0;motor_pending=motor_reply_wait=0;
+    pending_tick=last_init=last_link=last_sent_sample=pending_sample=0;
+    init_attempted=0;
 }
-
-void Ethernet_Test_Update(void)
+void Ethernet_Update(void)
 {
-    uint32_t now = HAL_GetTick();
-    int wanted = g_eth_control.enable || g_eth_control.send_once;
-    if (g_eth_control.reinit || (!g_eth.ready && (wanted || g_eth_control.ai_rx_enable || g_eth_control.motor_rx_enable) &&
-        (!init_attempted || now-last_init >= 1000u))) {
-        g_eth_control.reinit = 0;
-        init_attempted = 1; last_init = now;
-        int rc = setup();
-        if (rc) { failed(rc); return; }
-        g_eth.last_result = 0;
-        last_link = now-250u;
+    uint32_t now=HAL_GetTick();
+    if (!g_eth.ready && (!init_attempted || now-last_init>=1000u)) {
+        init_attempted=1;last_init=now;
+        int rc=setup();if (rc) {failed(rc);return;}
+        g_eth.last_result=0;last_link=now-250u;
     }
     if (!g_eth.ready) return;
     uint8_t status;
-    if (read_bytes(1, 3, &status, 1)) { failed(-1); return; }
-    g_eth.socket_status = status;
-    if (status != 0x22u) { failed(-3); return; }
-    if (now-last_link >= 250u || wanted) {
-        uint8_t phy;
-        last_link = now;
-        if (read_bytes(0, 0x2E, &phy, 1)) { failed(-1); return; }
-        g_eth.phy = phy; g_eth.link_up = phy & 1u;
+    if (read_bytes(1,3,&status,1)) {failed(-1);return;}
+    g_eth.socket_status=status;
+    if (status!=0x22u) {failed(-3);return;}
+    if (now-last_link>=250u) {
+        uint8_t phy;last_link=now;
+        if (read_bytes(0,0x2E,&phy,1)) {failed(-1);return;}
+        g_eth.phy=phy;g_eth.link_up=phy&1u;
     }
-    int rx_result = receive_ai();
-    if (rx_result) {
-        g_eth.last_rx_result = rx_result;
-        failed(rx_result);
-        return;
-    }
-    int motor_result = motor_update();
-    if (motor_result) { failed(motor_result); return; }
+
+    int rc=receive_ai();if (rc) {g_eth.last_rx_result=rc;failed(rc);return;}
+    rc=motor_update();if (rc) {failed(rc);return;}
     if (g_eth.pending) {
         uint8_t ir;
-        if (read_bytes(1, 2, &ir, 1)) { failed(-1); return; }
-        if (ir & 8u) {
-            if (write8(1, 2, 8u)) { failed(-1); return; }
-            g_eth.pending = 0;
-            g_eth.last_result = -5;
-            ++g_eth.error_count;
-            return;
+        if (read_bytes(1,2,&ir,1)) {failed(-1);return;}
+        if (ir&8u) {
+            if (write8(1,2,8u)) {failed(-1);return;}
+            g_eth.pending=0;g_eth.last_result=-5;++g_eth.error_count;return;
         }
-        if (ir & 0x10u) {
-            if (write8(1, 2, 0x10)) { failed(-1); return; }
-            g_eth.pending = 0; ++g_eth.tx_count;
-            g_eth.last_tx_tick = now; g_eth.last_result = 0;
-        } else if (now-pending_tick >= 1000u) { failed(-5); return; }
+        if (ir&0x10u) {
+            if (write8(1,2,0x10u)) {failed(-1);return;}
+            g_eth.pending=0;++g_eth.tx_count;
+            last_sent_sample=pending_sample;
+            g_eth.last_tx_tick=now;g_eth.last_result=0;
+        } else if (now-pending_tick>=1000u) {failed(-5);return;}
         else return;
     }
-    uint32_t period = g_eth_control.period_ms < 100u ? 100u : g_eth_control.period_ms;
-    if (!g_eth_control.send_once && (!g_eth_control.enable || now-last_attempt < period)) return;
-    g_eth_control.send_once = 0; last_attempt = now;
-    if (!g_eth.link_up) { failed(-4); return; }
-    uint16_t free1=0, free2=0, pointer;
-    int stable = 0;
-    for (unsigned i=0; i<4; ++i) {
-        if (read16(0x20, &free1) || read16(0x20, &free2)) { failed(-1); return; }
-        if (free1 == free2) { stable = 1; break; }
-    }
-    uint8_t p[ETH_TEST_PACKET_SIZE];
-    uint16_t length = Ethernet_Test_Encode(p, g_eth.sequence + 1u);
-    if (!length) { failed(-9); return; }
-    if (!stable || free1 < length) { failed(-6); return; }
-    ++g_eth.sequence;
-    if (read16(0x24, &pointer) || write8(1, 2, 0x18) ||
-        write_bytes(2, pointer, p, length) ||
-        write16(0x24, (uint16_t)(pointer+length))) { failed(-1); return; }
-    int rc = command(0x20);
-    if (rc) { failed(rc); return; }
-    pending_tick = HAL_GetTick(); g_eth.pending = 1; g_eth.last_result = 1;
+    if (!g_eth.link_up) {g_eth.last_result=-4;return;}
+
+    if (!g_demo.started || !g_bms.sample_attempt_count ||
+        g_bms.sample_attempt_count==g_bms.session_sample_start ||
+        g_bms.sample_attempt_count==last_sent_sample) return;
+    uint16_t free1=0,free2=0,pointer;
+    if (read16(0x20,&free1)||read16(0x20,&free2)) {failed(-1);return;}
+    uint8_t packet[ETH_TEST_PACKET_SIZE];uint16_t length;
+    length=Ethernet_Encode(packet,g_eth.sequence+1u);
+    if (!length) {failed(-9);return;}
+    if (free1!=free2 || free1<length) {failed(-6);return;}
+    if (read16(0x24,&pointer)||write8(1,2,0x18u)) {failed(-1);return;}
+
+    uint16_t offset=pointer&2047u,first=(uint16_t)(2048u-offset);
+    if (first>length) first=length;
+    if (write_bytes(2,offset,packet,first) ||
+        (length>first && write_bytes(2,0,packet+first,(uint16_t)(length-first))) ||
+        write16(0x24,(uint16_t)(pointer+length))) {failed(-1);return;}
+    rc=command(0x20);if (rc) {failed(rc);return;}
+    ++g_eth.sequence;pending_sample=g_bms.sample_attempt_count;
+    pending_tick=HAL_GetTick();g_eth.pending=1;g_eth.last_result=1;
 }

@@ -105,6 +105,7 @@ static int memory_write(uint16_t address, uint8_t count, uint32_t value)
         data[i] = (uint8_t)(value >> (8u * i));
         sum = (uint8_t)(sum + data[i]);
     }
+
     if (command(address) || wait_echo(address)) return bq_last_error;
     trailer[0] = (uint8_t)(sum ^ 0xFFu);
     trailer[1] = (uint8_t)(count + 4u);
@@ -128,6 +129,7 @@ static int wait_config(uint16_t expected)
 
 static int is_ntc(uint8_t config)
 {
+
     return (config & 3u) == 3u && (config & 12u) != 0u &&
            (config & 48u) != 48u && (config & 192u) < 128u;
 }
@@ -150,7 +152,7 @@ int BQ_ReadID(uint16_t *device_id)
 
 int BQ_Configure(void)
 {
-    uint8_t ntc[4], data[2], da;
+    uint8_t ntc[4], data[2], da, protections_a;
     uint16_t status, power;
     uint32_t gain_bits, capacity_bits;
     float gain = 7.4768f / 10.0f;
@@ -159,6 +161,7 @@ int BQ_Configure(void)
 
     if (sizeof(float) != 4u) return result(-7);
     if (read_word(0x12u, &status)) return bq_last_error;
+
     if (!(status & 1u) && (command(0x0090u) || wait_config(1u))) {
         error = bq_last_error;
         goto finish;
@@ -171,6 +174,7 @@ int BQ_Configure(void)
     if (memory_read(0x9234u, data, 2u)) { error = bq_last_error; goto finish; }
     power = (uint16_t)((u16(data) | 0x1000u) & 0xFEFFu);
     if (memory_read(0x9303u, &da, 1u)) { error = bq_last_error; goto finish; }
+    if (memory_read(0x9261u, &protections_a, 1u)) { error = bq_last_error; goto finish; }
     da = (uint8_t)((da & 0xF8u) | 5u);
     memcpy(&gain_bits, &gain, 4u);
     memcpy(&capacity_bits, &capacity, 4u);
@@ -179,14 +183,21 @@ int BQ_Configure(void)
         memory_write(0x9303u, 1u, da) ||
         memory_write(0x9234u, 2u, power) ||
         memory_write(0x91A8u, 4u, gain_bits) ||
-        memory_write(0x91ACu, 4u, capacity_bits)) {
+        memory_write(0x91ACu, 4u, capacity_bits) ||
+
+        memory_write(0x9261u, 1u, (uint8_t)(protections_a & 0x7Fu))) {
         error = bq_last_error;
+        goto finish;
+    }
+    if (memory_read(0x9261u, data, 1u) || data[0]!=(uint8_t)(protections_a & 0x7Fu)) {
+        error = bq_last_error ? bq_last_error : -5;
         goto finish;
     }
     for (unsigned i = 0u; i < 4u; ++i) {
         if (memory_write(ntc_address[i], 1u, ntc[i])) { error = bq_last_error; break; }
     }
 finish:
+
     if (command(0x0092u) || wait_config(0u)) return bq_last_error;
     if (error) return result(error);
     if (command(0x009Au)) return bq_last_error;
@@ -240,14 +251,63 @@ int BQ_Read(BQ_Data *data)
 
 int BQ_EnableFETs(void)
 {
-    uint8_t data[2];
+    uint8_t data[2], enabled_a;
+
+    if (memory_read(0x9261u, &enabled_a, 1u)) return bq_last_error;
+    if (enabled_a & 0x80u) return result(-32);
     if (memory_read(0x0057u, data, 2u)) return bq_last_error;
     if (!(u16(data) & 0x10u)) {
+
         if (command(0x0022u) || memory_read(0x0057u, data, 2u)) return bq_last_error;
         if (!(u16(data) & 0x10u)) return result(-5);
     }
     if (command(0x0096u)) return bq_last_error;
     return result(0);
+}
+
+static int run_protection_check(void)
+{
+    uint8_t raw[16];
+    if (read_bytes(0x02u, raw, sizeof raw)) return bq_last_error;
+    if ((raw[1]&0xFCu) || (raw[3]&0xF7u) || (raw[5]&0xF6u) ||
+        (raw[9]&0xDFu) || (raw[11]&0x9Fu) || raw[13] || (raw[15]&1u))
+        return result(-13);
+    return 0;
+}
+
+int BQ_PrepareFETs(void)
+{
+    uint8_t protections[13], check[13], scd[2], scd_was_enabled;
+    int rc, exit_rc;
+
+    if (BQ_DisableFETs()) return bq_last_error;
+    if (memory_read(0x925Fu, protections, sizeof protections) ||
+        memory_read(0x9286u, scd, sizeof scd)) return bq_last_error;
+    scd_was_enabled=protections[2]&0x80u;
+    protections[2]&=0x7Fu;
+    if (scd_was_enabled || scd[0]!=0x03u || scd[1]!=0x02u) {
+        rc=0;
+        if (command(0x0090u) || wait_config(1u)) rc=bq_last_error;
+        if (!rc && (memory_write(0x9261u,1u,protections[2]) ||
+                    memory_write(0x9286u,1u,0x03u) ||
+                    memory_write(0x9287u,1u,0x02u))) rc=bq_last_error;
+
+        exit_rc=command(0x0092u);
+        if (!exit_rc) exit_rc=wait_config(0u);
+        if (exit_rc) rc=exit_rc;
+        if (rc) goto fail;
+    }
+    if (memory_read(0x9286u,scd,sizeof scd) ||
+        memory_read(0x925Fu,check,sizeof check)) { rc=bq_last_error; goto fail; }
+    if (scd[0]!=0x03u || scd[1]!=0x02u ||
+        memcmp(protections,check,sizeof check)) { rc=-5; goto fail; }
+    if (run_protection_check()) { rc=bq_last_error; goto fail; }
+    rc=BQ_EnableFETs();
+    if (!rc) return result(0);
+fail:
+
+    (void)BQ_DisableFETs();
+    return result(rc);
 }
 
 int BQ_DisableFETs(void)
@@ -282,20 +342,6 @@ int BQ_BalanceSet(uint16_t mask)
         write_bytes(0x40u, data, 2u) || write_bytes(0x60u, trailer, 2u))
         return bq_last_error;
     HAL_Delay(2u);
-    return result(0);
-}
 
-int BQ_ReadProtectionProfile(BQ_ProtectionProfile *profile)
-{
-    BQ_ProtectionProfile value={0};
-    if (!profile) return result(-7);
-    if (memory_read(0x9261u,value.enabled,3u) ||
-        memory_read(0x9265u,value.chg_map,3u) ||
-        memory_read(0x9269u,value.dsg_map,3u) ||
-        memory_read(0x9275u,&value.cuv_code,1u) ||
-        memory_read(0x9278u,&value.cov_code,1u) ||
-        memory_read(0x9286u,&value.scd_code,1u) ||
-        memory_read(0x9287u,&value.scd_delay_code,1u)) return bq_last_error;
-    *profile=value;
     return result(0);
 }

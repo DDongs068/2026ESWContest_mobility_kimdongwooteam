@@ -229,3 +229,9 @@ AI_AutoEncoder/RaspberryPi/monitor/runtime/
 AI_AutoEncoder/RaspberryPi/relay/data*/
 AI_AutoEncoder/RaspberryPi/relay/buffer/
 AI_AutoEncoder/RaspberryPi/relay/logs/
+
+# 컨트롤 패널 실행 기록
+ControlPanel/runtime/
+AI_AutoEncoder/RaspberryPi/relay/label.txt
+MCU/build/
+MCU/firmware/

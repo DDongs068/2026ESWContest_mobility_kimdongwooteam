@@ -173,11 +173,12 @@ python 4_eval/eval.py
 | 폴더 | 역할 |
 |---|---|
 | `RaspberryPi/monitor/` | `monitor_server.py`가 `3_model`과 `5_weights/AE`를 불러와 MCU 측정값을 1 s마다 판정하고, 결과를 모니터 UI(포트 8050)에 표시합니다. |
-| `RaspberryPi/relay/` | MCU 측정 수신(5001), 시뮬레이션 데이터 수신(5002), 엑셀 버퍼, 모니터로 전달(5005), Mac ↔ PCB 명령 중계(6000 → 5000) |
-| `RaspberryPi/systemd/` | 부팅할 때 위 코드를 자동으로 실행하는 서비스 파일 |
+| `RaspberryPi/relay/` | MCU 측정 수신(5001), 시뮬레이션 데이터 수신(5013), 엑셀 버퍼, 모니터로 전달(5005) |
+| `RaspberryPi/control_panel/` | Mac 컨트롤 패널의 Pi 쪽 대리인: 프레임을 AE 경로와 MCU로 분배 |
+| `RaspberryPi/systemd/` | 부팅할 때 수신·버퍼 코드를 자동으로 실행하는 서비스 파일 |
 
 ```bash
-bash RaspberryPi/monitor/run.sh        # Pi 에서: AE 판정 서버 + UI → http://<Pi IP>:8050
+bash RaspberryPi/monitor/run.sh        # AE 판정 서버 + UI → http://10.55.0.2:8050
 ```
 
 ---

@@ -20,7 +20,6 @@
   #opState { font-size: 17px; white-space: nowrap; }
   header .meta { font-size: 13px; color: var(--muted); flex: 1; min-width: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   main { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1.25fr); gap: 8px; padding: 8px; min-height: 0; }
-
   .grid { display: grid; grid-template-columns: 84px repeat(3, minmax(0, 1fr)); grid-template-rows: auto repeat(4, minmax(0, 1fr)); gap: 4px; min-height: 0; }
   .colhead { font-size: 16px; font-weight: 600; text-align: center; color: var(--muted); }
   .colhead small { font-weight: 400; font-size: 13px; } .gkey { color: var(--grad); }
@@ -30,13 +29,11 @@
   .rowhead.alarm { background: rgba(255,77,79,.22); border-color: var(--bad); }
   .cellbox { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; position: relative; min-height: 0; }
   .cellbox canvas, .single canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-
-  .side { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; min-height: 0; min-width: 0; }
+  .side { display: grid; grid-template-rows: auto minmax(0, 1fr) 216px 76px; gap: 8px; min-height: 0; min-width: 0; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; min-height: 0; }
   .panel h2 { font-size: 16px; margin: 0 0 4px; display: flex; justify-content: space-between; gap: 6px; }
   .panel h2 span { color: var(--muted); font-weight: 400; font-size: 13px; white-space: nowrap; }
   .single { flex: 1; position: relative; min-height: 0; }
-
   table.board { width: 100%; border-collapse: separate; border-spacing: 3px; font-variant-numeric: tabular-nums; }
   .board th { font-size: 15px; color: var(--muted); font-weight: 600; }
   .board td { background: #0b1016; border: 1px solid var(--line); border-radius: 4px; padding: 7px 10px;
@@ -44,7 +41,6 @@
   .board td.name { font-family: inherit; font-size: 18px; font-weight: 700; text-align: left; border-left: 4px solid; }
   .board td.up { color: var(--up); background: rgba(255,91,91,.13); } .board td.down { color: var(--down); background: rgba(74,163,255,.13); }
   .board .d { font-size: 15px; margin-left: 4px; }
-
   .bufrow { display: grid; grid-template-columns: 92px 1fr auto; gap: 8px; align-items: center; font-size: 13px; margin: 3px 0; }
   .bar { position: relative; height: 20px; background: #0b1016; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
   .bar .fill { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #1f6f8b, #36d6c3); transition: width .15s linear; }
@@ -55,8 +51,7 @@
   .slot.bad { box-shadow: inset 0 0 0 2px var(--bad); }
   .flash { animation: fl .6s ease-out; } @keyframes fl { from { box-shadow: 0 0 0 3px var(--score); } }
   .kv { font-size: 13px; color: var(--muted); } .kv b { color: var(--text); font-variant-numeric: tabular-nums; }
-
-  #status { border-radius: 6px; padding: 8px; text-align: center; border: 2px solid var(--wait); }
+  #status { border-radius: 6px; padding: 8px; text-align: center; border: 2px solid var(--wait); height: 216px; box-sizing: border-box; overflow: hidden; }
   #status .big { font-size: 36px; font-weight: 800; letter-spacing: 1px; }
   #status .small { font-size: 15px; margin-top: 2px; }
   #status.NORMAL { border-color: var(--ok); background: rgba(46,204,113,.12); } #status.NORMAL .big { color: var(--ok); }
@@ -64,9 +59,16 @@
   #status.WAITING .big, #status.OFFLINE .big { color: var(--wait); }
   @keyframes blink { 50% { background: rgba(255,77,79,.05); } }
   .twin { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; text-align: left; }
-  .lane { border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; font-size: 13px; }
+  .lane { border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .lane b { font-size: 16px; } .lane.trip { border-color: var(--bad); } .lane.trip b { color: var(--bad); }
-  #msgs { font-size: 12px; color: var(--muted); white-space: pre-line; max-height: 3.6em; overflow: hidden; text-align: left; margin-top: 4px; }
+  .lane.pcbok { border-color: var(--ok); background: rgba(46,204,113,.12); } .lane.pcbok b { color: var(--ok); }
+  .lane.pcbbad { border-color: var(--bad); background: rgba(255,77,79,.18); } .lane.pcbbad b { color: var(--bad); }
+  #msgs { font-size: 12px; color: var(--muted); white-space: pre-line; height: 2.5em; overflow: hidden; text-align: left; margin-top: 4px; }
+  #ctrl { display: grid; grid-template-rows: 1fr auto; gap: 3px; min-height: 0; overflow: hidden; }
+  #ctrl .row { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 6px; min-height: 0; }
+  #ctrl button { font: inherit; font-size: 13px; font-weight: 700; border-radius: 6px; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: inherit; padding: 0 2px; }
+  #ctrl button.on { border-color: var(--ok); background: rgba(46,204,113,.18); } #ctrl button:disabled { opacity: .5; cursor: wait; }
+  #ctrlMsg { font-size: 12px; color: var(--muted); height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } #ctrlMsg.err { color: var(--bad); }
   .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
   .btns button { font: inherit; font-size: 14px; font-weight: 700; padding: 6px 0; border-radius: 6px; cursor: pointer; border: 1px solid var(--line); color: var(--text); background: #223040; }
 </style>
@@ -110,7 +112,19 @@
         <div class="lane" id="laneLegacy"><span id="legSrc">기존 임계값 판정</span><br><b id="legTxt">-</b></div>
       </div>
       <div id="msgs"></div>
-      <div class="btns"><button onclick="sendCommand('motor_on')">모터 ON</button><button onclick="sendCommand('motor_off')">모터 OFF</button></div>
+      <div class="twin">
+        <div class="lane" id="lanePCB">PCB 판정<br><b id="pcbTxt">-</b></div>
+        <div class="lane" id="laneMotor"><span id="motorLbl">모터 (PCB)</span><br><b id="motorTxt">-</b></div>
+      </div>
+    </div>
+    <div id="ctrl">
+      <div class="row">
+        <button id="btnDrive" onclick="motorAction(sessionOn ? 'drive_stop' : 'drive_start')">▶ 정상주행 시작</button>
+        <button id="btnOn" onclick="motorAction('motor_on')">모터 ON</button>
+        <button id="btnOff" onclick="motorAction('motor_off')">모터 OFF</button>
+        <button id="btnChg" onclick="motorAction(chargeOn ? 'charge_off' : 'charge_on')">충전 ON</button>
+      </div>
+      <div id="ctrlMsg">모터: 모터1 90 % · 모터2 30 % 고정 · 충전과 동시 사용 불가</div>
     </div>
   </section>
 </main>
@@ -122,7 +136,6 @@ const CELL_COLORS = ["#4aa3ff", "#ffb347", "#36d6c3", "#c08cff"];
 const ROUTE_KO = { chg: "충전", dis: "주행·방전", rest: "휴지" };
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const COLS = ["t", "v", "i"];
-
 const gridEl = document.getElementById("grid");
 for (let r = 0; r < 4; r++) {
   gridEl.insertAdjacentHTML("beforeend", `
@@ -135,7 +148,6 @@ for (let k = 0; k < 4; k++) board.insertAdjacentHTML("beforeend",
   `<tr><td class="name" style="border-left-color:${CELL_COLORS[k]}">Cell ${k + 1}</td><td id="bv${k}">-</td><td id="bi${k}">-</td><td id="bt${k}">-</td></tr>`);
 const slots = document.getElementById("slots");
 for (let k = 0; k < 12; k++) slots.insertAdjacentHTML("beforeend", `<div class="slot" id="slot${k}"></div>`);
-
 function smooth(a, k) {
   if (!a || a.length < k) return a || [];
   const h = Math.floor(k / 2), out = new Array(a.length);
@@ -154,7 +166,6 @@ function tick(id, val, dec) {
   td.innerHTML = `${val.toFixed(dec)}<span class="d">${cls === "up" ? "▲" : cls === "down" ? "▼" : "–"}</span>`;
   if (cls || p == null) prev[id] = val;
 }
-
 function drawChart(id, series, opt) {
   const cv = document.getElementById(id);
   const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
@@ -197,7 +208,6 @@ function drawChart(id, series, opt) {
   if (opt.hline != null) tag(opt.hline + "%", L + 3, Y(opt.hline) - 3, css("--tau"), "left");
   if (opt.label) tag(opt.label, L + pw / 2, T + ph - 3, css("--muted"), "center");
 }
-
 let lastData = null, lastWinN = -1;
 function render(d) {
   lastData = d;
@@ -210,7 +220,6 @@ function render(d) {
   document.getElementById("legSrc").textContent = `기존 임계값 판정 (${d.legacy_src})`;
   document.getElementById("rxTxt").textContent = d.latest ? `t = ${d.latest.t.toFixed(1)} s · ${d.rx_age_s != null && d.rx_age_s < 2 ? "수신 중" : "수신 대기"}` : "수신 대기";
   if (d.latest) for (let k = 0; k < 4; k++) { tick(`bv${k}`, d.latest.v[k], 3); tick(`bi${k}`, d.latest.i, 3); tick(`bt${k}`, d.latest.temp[k], 2); }
-
   document.getElementById("bufFill").style.width = (d.buf_len / d.window * 100) + "%";
   document.getElementById("hopMark").style.left = d.buf_len < d.window ? "100%" : ((d.window - d.hop + d.since_hop) / d.window * 100) + "%";
   document.getElementById("bufTxt").textContent = `${d.buf_len}/${d.window}`;
@@ -224,7 +233,6 @@ function render(d) {
   document.getElementById("histTxt").textContent = `${d.hist_len}/${d.hist_max}`;
   if (d.n_windows !== lastWinN) { slots.classList.remove("flash"); void slots.offsetWidth; slots.classList.add("flash"); lastWinN = d.n_windows; }
   document.getElementById("inferTxt").textContent = `판정 1회 ${d.infer_ms} ms`;
-
   const tRel = d.t.length ? d.t.map(x => (x - d.t[d.t.length - 1]) / 60) : [];
   const temps = d.temps.map(a => smooth(a, SMOOTH_PTS)), volts = d.volts.map(a => smooth(a, SMOOTH_PTS)), cur = smooth(d.packI, SMOOTH_PTS);
   const [tLo, tHi] = pad(...extent(temps), 0.15, 1.0), [vLo, vHi] = pad(...extent(volts), 0.15, 0.02), [iLo, iHi] = pad(...extent([cur]), 0.15, 0.2);
@@ -243,7 +251,6 @@ function render(d) {
     document.getElementById(`rs${r}`).textContent = lw ? `이상도 ${(lw.cell[r] * 100).toFixed(0)}%` : "이상도 -";
     document.getElementById(`row${r}`).classList.toggle("alarm", d.status === "ABNORMAL" && d.fault_cell === r + 1);
   }
-
   const W = d.win.filter(w => w.t >= (d.win.length ? d.win[d.win.length - 1].t - 600 : 0));
   const wx = W.map(w => (w.t - (W.length ? W[W.length - 1].t : 0)) / 60);
   const series = [0, 1, 2, 3].map(k => ({ x: wx, y: W.map(w => w.cell[k] * 100), color: CELL_COLORS[k], width: 1.6 }));
@@ -251,7 +258,6 @@ function render(d) {
   const top = Math.min(SCORE_CLIP, Math.max(150, ...W.flatMap(w => [...w.cell, w.pack]).map(p => p * 110)));
   drawChart("cScore", series, { ymin: 0, ymax: top, dec: 0, hline: 100, clipTop: true, label: "분 (최신 = 오른쪽) · 점선 = 팩" });
   document.getElementById("scoreTxt").textContent = lw ? `최대 ${(Math.max(...lw.cell, lw.pack) * 100).toFixed(0)}% · 100% 초과 = 이상` : "";
-
   const lg = Object.keys(d.legacy.tripped);
   const big = document.getElementById("status");
   const cls = d.status;
@@ -264,8 +270,45 @@ function render(d) {
   document.getElementById("legTxt").textContent = lg.length ? lg.map(k => `${k} (${d.legacy.tripped[k].toFixed(1)} s)`).join(", ") : "정상 (보호 조건 미충족)";
   document.getElementById("laneLegacy").className = "lane" + (lg.length ? " trip" : "");
   document.getElementById("msgs").textContent = d.messages.slice(-3).join("\n");
+  const p = d.pcb || {};
+  const real = p.online && !p.emu;
+  sessionOn = real && !!d.drive_active; chargeOn = real && !!p.charge_on;
+  document.getElementById("btnDrive").textContent = sessionOn ? "■ 정상주행 정지" : "▶ 정상주행 시작";
+  document.getElementById("btnDrive").className = sessionOn ? "on" : "";
+  document.getElementById("btnOn").className = real && p.stage === 3 ? "on" : "";
+  document.getElementById("btnChg").textContent = chargeOn ? "충전 OFF" : "충전 ON";
+  document.getElementById("btnChg").className = chargeOn ? "on" : "";
+  const simFault = p.sim_fault || p.csv_fault;
+  const realFault = p.fault || p.estop === 0 || [-12, -13, -27].includes(p.remote);
+  const pcbTrip = p.online && (simFault || realFault);
+  const bitNames = ["COV", "CUV", "OCD", "OT"].filter((_, k) => ((p.sim_bits || 0) >> k) & 1).join("·");
+  const simTxt = p.algo || p.csv_fault ? `폴트${bitNames ? " " + bitNames : ""} → 출력 차단` : "시연 폴트 (MCU 판정 미탑재)";
+  document.getElementById("pcbTxt").textContent = !p.online ? "연결 없음" : simFault ? simTxt : realFault ? "실측 보호 동작" : "정상";
+  document.getElementById("lanePCB").className = "lane" + (!p.online ? "" : pcbTrip ? " pcbbad" : " pcbok");
+  const run = p.online && (p.stage >= 3 || (p.gpio & 4));
+  if (d.panel === "charge") {
+    const iNow = d.latest ? d.latest.i : null;
+    const chg = iNow !== null && iNow > 0.03;
+    document.getElementById("motorLbl").textContent = "충전 여부";
+    document.getElementById("motorTxt").textContent = iNow === null ? "-" : chg ? `충전 중 (+${iNow.toFixed(2)} A)` : "충전 아님";
+    document.getElementById("laneMotor").className = "lane" + (chg ? " pcbok" : "");
+  } else {
+    document.getElementById("motorLbl").textContent = "모터 (PCB)";
+    document.getElementById("motorTxt").textContent = !p.online ? "-" : run ? `동작 (M1 ${(p.m1 || 0) / 10}% · M2 ${(p.m2 || 0) / 10}%)` : "정지";
+    document.getElementById("laneMotor").className = "lane" + (!p.online ? "" : run ? " pcbok" : " pcbbad");
+  }
 }
-
+let sessionOn = false, chargeOn = false;
+async function motorAction(action) {
+  const btns = document.querySelectorAll("#ctrl button"), msg = document.getElementById("ctrlMsg");
+  btns.forEach(b => b.disabled = true);
+  try {
+    const r = await fetch("/api/motor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+    const j = await r.json();
+    msg.textContent = j.msg; msg.className = j.ok ? "" : "err";
+  } catch (e) { msg.textContent = "모니터 서버 응답 없음"; msg.className = "err"; }
+  finally { btns.forEach(b => b.disabled = false); }
+}
 async function sendCommand(cmd) {
   try { await fetch("/api/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmd }) }); } catch (e) {}
 }

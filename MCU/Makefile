@@ -1,10 +1,13 @@
+# Standalone ARM build. CubeIDE managed builds remain available separately.
+# make TOOLCHAIN_BIN=/absolute/path/to/arm-gnu-toolchain/bin
+# make CONFIG=Release TOOLCHAIN_BIN=/absolute/path/to/arm-gnu-toolchain/bin
 CONFIG ?= Debug
 TOOLCHAIN_BIN ?=
 CROSS_COMPILE ?= arm-none-eabi-
 HOST_CC ?= clang
 BUILD_DIR := build/$(CONFIG)
-OUTPUT_DIR := $(CONFIG)
-TARGET := $(OUTPUT_DIR)/aibms_true_final_mcu
+OUTPUT_DIR := firmware/$(CONFIG)
+TARGET := $(OUTPUT_DIR)/aibms_1028_baseline
 TOOLS := $(if $(strip $(TOOLCHAIN_BIN)),$(TOOLCHAIN_BIN)/,)$(CROSS_COMPILE)
 CC := $(TOOLS)gcc
 OBJCOPY := $(TOOLS)objcopy
