@@ -22,7 +22,7 @@
 ## 1. 폴더 구성
 
 ```
-AI_AutoEncoder/
+AI_AutoEncoder(RaspberryPi)/
 ├── 1_preprocess/preprocess.py   원본 run (10 Hz) → 1 s 윈도우 요약
 ├── 2_train/train.py             정상 데이터로 AE 학습 → 가중치 · 판정 경계
 ├── 3_model/
@@ -44,7 +44,7 @@ AI_AutoEncoder/
 pip install numpy pandas scipy torch matplotlib     # Pi 추론만 할 때는 numpy 만 있으면 됨
 ```
 
-- 모든 명령은 `AI_AutoEncoder/` 폴더에서 실행합니다.
+- 모든 명령은 `AI_AutoEncoder(RaspberryPi)/` 폴더에서 실행합니다.
 - 경로는 각 코드 맨 위에 상수로 들어 있습니다. 설정 파일이나 인자는 쓰지 않습니다.
 - **학습·평가용 원본 데이터는 저장소에 없습니다.**
   - Simscape 디지털 트윈으로 만든 시뮬레이션 run입니다.

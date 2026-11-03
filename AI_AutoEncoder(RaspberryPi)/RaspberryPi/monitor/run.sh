@@ -1,9 +1,9 @@
 #!/bin/bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
 PI=rpi4@10.55.0.2
-PI_DIR=/home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/monitor
+PI_DIR="/home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/monitor"
 if ! grep -qs "Raspberry Pi" /proc/device-tree/model; then
-  ssh -n -o BatchMode=yes -o ConnectTimeout=5 "$PI" "bash $PI_DIR/run.sh" || { echo "[오류] 라즈베리파이에 연결하지 못했습니다. USB 연결을 확인해 주세요."; exit 1; }
+  ssh -n -o BatchMode=yes -o ConnectTimeout=5 "$PI" "bash '$PI_DIR/run.sh'" || { echo "[오류] 라즈베리파이에 연결하지 못했습니다. USB 연결을 확인해 주세요."; exit 1; }
   open "http://10.55.0.2:8050"
   exit 0
 fi

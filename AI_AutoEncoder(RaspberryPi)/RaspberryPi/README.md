@@ -1,6 +1,6 @@
 # RaspberryPi — Raspberry Pi 5 실시간 AE 판정
 
-`AI_AutoEncoder`에서 학습한 AE는 **실제로 Raspberry Pi 5에 올라가서 동작합니다.** Pi가 판정에 쓰는 코드와 가중치는 아래 둘입니다.
+`AI_AutoEncoder(RaspberryPi)`에서 학습한 AE는 **실제로 Raspberry Pi 5에 올라가서 동작합니다.** Pi가 판정에 쓰는 코드와 가중치는 아래 둘입니다.
 
 - 모델 코드: `../3_model`
 - 가중치: `../5_weights/AE`

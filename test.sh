@@ -20,7 +20,7 @@ PANEL: str = "http://127.0.0.1:8060"
 PANEL_DIR: str = os.path.join(os.environ["AIBMS_ROOT"], "ControlPanel")
 JOB_DIR: str = f"{PANEL_DIR}/runtime/jobs"
 READY_FILE: str = f"{PANEL_DIR}/runtime/worker.ready"
-DATA_DIR: str = "/home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder/RaspberryPi/relay/data"
+DATA_DIR: str = "/home/rpi4/2026ESWContest_mobility_kimdongwooteam/AI_AutoEncoder(RaspberryPi)/RaspberryPi/relay/data"
 ACTIVE_SYSTEM: list[str] = ["pcb-receiver"]
 ACTIVE_USER: list[str] = ["pcb-calc-buffer", "pcb-calc-buffer-abnormal", "pcb-excel-to-w10",
                           "pcb-excel-to-w10-abnormal", "pcb-receiver-abnormal"]
