@@ -57,6 +57,23 @@ UDP_IN_PORT: int = 5005
 RELAY_IN_PORT: int = 5008
 RX_LOG_DIR: str = os.path.join(APP_DIR, "runtime", "rx_log")
 PCB_ADDR: tuple[str, int] = ("127.0.0.1", 5006)
+PCB_STATUS_ADDR: tuple[str, int] = ("192.168.50.10", 5002)
+PCB_POLL_S: float = 1.0
+MCU_TIMEOUT_S: float = 0.8
+MCU_OFF_RETRY: int = 3
+MCU_STATUS_POLL_S: float = 0.1
+MCU_VALID_WAIT_S: float = 2.0
+MCU_OUTPUT_WAIT_S: float = 4.0
+MCU_OFF_WAIT_S: float = 1.0
+MCU_GATEWAY_TIMEOUT_S: float = 0.3
+MCU_LOCK = threading.Lock()
+MCU_ACTION_LOCK = threading.Lock()
+MCU_RC_TEXT: dict[int, str] = {-7: "잘못된 출력 요청", -11: "센싱값이 유효하지 않음", -12: "ESTOP 동작 중", -13: "BMIC 보호 동작 중",
+                               -14: "밸런싱 통신 오류", -17: "AI 정지 상태", -18: "FET 조건 불충족", -19: "FET 켜짐 확인 실패",
+                               -22: "충전 조건 불충족 (충전기 연결·FET 확인)", -23: "충전 불가 (NTC·셀 전압·온도 범위)",
+                               -24: "모터와 충전은 동시에 켤 수 없음, 먼저 꺼 주세요", -27: "모터 드라이버 오류",
+                               -30: "상태 번호가 바뀜, 다시 눌러 주세요", -32: "SCD 정책 오류", -40: "센싱 시작 전",
+                               -44: "시연 폴트 유지 중 (시나리오 중지 시 해제)", 0: "시간 안에 적용되지 않음"}
 PCB_CTRL_ADDR: tuple[str, int] = ("127.0.0.1", 5007)
 SRC_KO: dict[str, str] = {"PCB": "PCB 실측", "PCB-REPLAY": "PCB 재생 (시뮬레이션)",
                           "PCB-EMU": "PCB 대역 (시뮬레이션 재생)", "PCB-EMU-NORMAL": "PCB 대역 (정상 시험 데이터)",
@@ -86,6 +103,7 @@ class MonitorState:
     def __init__(self) -> None:
         self.lock = threading.Lock()
         self.accepting = True
+        self.drive_active = False
         self.mode = "abnormal"
         self.n_relay = 0
         self.n_to_pcb = 0
@@ -128,6 +146,10 @@ class MonitorState:
         self.n_alert = 0
         self.last_infer_ms = 0.0
         self.messages: deque = deque(maxlen=6)
+        self.pcb: dict = {}
+        self.pcb_tick: float = 0.0
+        self.pcb_emu: dict = {}
+        self.pcb_emu_tick: float = 0.0
 
 
     def close_rx_log(self) -> None:
@@ -471,7 +493,13 @@ def relay_to_pcb(st: MonitorState, rows: list, sock: socket.socket) -> int:
 
 def control(st: MonitorState, body: dict, sock: socket.socket) -> dict:
     a, mode = body.get("action", ""), body.get("mode")
+    if a == "pcb_emu":
+        with st.lock:
+            st.pcb_emu, st.pcb_emu_tick = dict(body.get("pcb") or {}), time.time()
+        return {"ok": True, "msg": "pcb_emu"}
     with st.lock:
+        if body.get("panel") in ("motor", "charge"):
+            st.panel = body["panel"]
         if mode in ("normal", "abnormal") and mode != st.mode:
             st.mode = mode
             st.reset()
@@ -534,6 +562,168 @@ def gradient(x: np.ndarray) -> np.ndarray:
     return g
 
 
+def pcb_poll_loop(st: MonitorState) -> None:
+    while True:
+        try:
+            j = mcu_command("STATUS")
+            with st.lock:
+                st.pcb, st.pcb_tick = j, time.time()
+        except (OSError, ValueError):
+            pass
+        time.sleep(PCB_POLL_S)
+
+
+def mcu_command(cmd: str, timeout_s: float = MCU_TIMEOUT_S) -> dict:
+    with MCU_LOCK:
+        req_id = int(time.time() * 1000) % 700000 + 100000
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(timeout_s)
+            sock.sendto(f"MC1 {req_id} {cmd}".encode(), PCB_STATUS_ADDR)
+            deadline = time.time() + timeout_s
+            while time.time() < deadline:
+                reply = json.loads(sock.recvfrom(4096)[0])
+                if reply.get("id") == req_id:
+                    return reply
+    raise TimeoutError(cmd)
+
+
+def rc_text(rc: int) -> str:
+    return MCU_RC_TEXT.get(rc, f"코드 {rc}")
+
+
+def mcu_checked(cmd: str) -> dict:
+    reply = mcu_command(cmd)
+    rc = int(reply.get("rc", 0))
+    if rc:
+        raise RuntimeError(f"{' '.join(cmd.split()[:2])} 거부: {rc_text(rc)}")
+    return reply
+
+
+def wait_status(done, timeout_s: float) -> dict | None:
+    deadline, seen = time.time() + timeout_s, False
+    while time.time() < deadline:
+        try:
+            status = mcu_command("STATUS")
+            seen = True
+            if done(status):
+                return status
+        except TimeoutError:
+            pass
+        time.sleep(MCU_STATUS_POLL_S)
+    if not seen:
+        raise TimeoutError("STATUS")
+    return None
+
+
+def ensure_started() -> dict:
+    if not mcu_command("STATUS").get("started"):
+        mcu_checked("START")
+    status = wait_status(lambda s: s.get("started") and s.get("valid"), MCU_VALID_WAIT_S)
+    if status is None:
+        last = mcu_command("STATUS")
+        raise RuntimeError(f"실측값이 유효하지 않습니다 (읽기 결과 {last.get('sample_rc')}). BMIC 연결을 확인해 주세요.")
+    return status
+
+
+def output_on(name: str, label: str, is_on, reason_key: str) -> None:
+    status = ensure_started()
+    if is_on(status):
+        return
+    try:
+        mcu_checked(f"{name} ON {status['rev']}")
+    except TimeoutError:
+        pass
+    if wait_status(is_on, MCU_OUTPUT_WAIT_S) is not None:
+        return
+    last = mcu_command("STATUS")
+    mcu_command(f"{name} OFF")
+    raise RuntimeError(f"{label} 시작 실패: {rc_text(int(last.get(reason_key) or 0))}")
+
+
+def output_off(cmd: str, is_off) -> None:
+    for attempt in range(MCU_OFF_RETRY):
+        try:
+            mcu_checked(cmd)
+            break
+        except TimeoutError:
+            if attempt == MCU_OFF_RETRY - 1:
+                raise
+    if wait_status(is_off, MCU_OFF_WAIT_S) is None:
+        raise RuntimeError(f"{cmd} 후에도 출력이 꺼지지 않았습니다. ESTOP 으로 정지해 주세요.")
+
+
+def motor_running(status: dict) -> bool:
+    return int(status.get("stage", 0)) == 3
+
+
+def charge_enabled(status: dict) -> bool:
+    return bool(status.get("charge_on"))
+
+
+def motor_action(st: "MonitorState", body: dict, out_sock: socket.socket) -> dict:
+    action = body.get("action", "")
+    try:
+        with MCU_ACTION_LOCK:
+            fresh = action in ("drive_start", "motor_on", "charge_on") and not mcu_command("STATUS").get("started")
+            if action == "drive_start":
+                output_on("MOTOR", "모터", motor_running, "remote")
+                if fresh:
+                    control(st, {"action": "reset", "mode": "normal"}, out_sock)
+                control(st, {"action": "start", "mode": "normal", "panel": "motor"}, out_sock)
+                with st.lock:
+                    st.drive_active = True
+                msg = "정상주행 시작 (모터1 90 % · 모터2 30 %)"
+            elif action == "drive_stop":
+                output_off("STOP", lambda s: not s.get("started") and not motor_running(s) and not charge_enabled(s))
+                control(st, {"action": "stop"}, out_sock)
+                with st.lock:
+                    st.drive_active = False
+                msg = "정상주행 정지"
+            elif action == "motor_on":
+                output_on("MOTOR", "모터", motor_running, "remote")
+                if fresh:
+                    control(st, {"action": "reset", "mode": "normal"}, out_sock)
+                with st.lock:
+                    st.accepting, st.panel = True, "motor"
+                    st.drive_active = st.drive_active and not fresh
+                msg = "모터 ON (모터1 90 % · 모터2 30 %)"
+            elif action == "motor_off":
+                output_off("MOTOR OFF", lambda s: not motor_running(s))
+                msg = "모터 OFF (센싱 계속)"
+            elif action == "charge_on":
+                output_on("CHARGE", "충전", charge_enabled, "charge_rc")
+                if fresh:
+                    control(st, {"action": "reset", "mode": "normal"}, out_sock)
+                with st.lock:
+                    st.accepting, st.panel = True, "charge"
+                    st.drive_active = st.drive_active and not fresh
+                msg = "충전 ON"
+            elif action == "charge_off":
+                output_off("CHARGE OFF", lambda s: not charge_enabled(s))
+                msg = "충전 OFF (센싱 계속)"
+            else:
+                return {"ok": False, "msg": f"알 수 없는 동작: {action}"}
+    except (TimeoutError, OSError):
+        return {"ok": False, "msg": "PCB 응답이 없습니다. 이더넷 연결과 전원을 확인해 주세요."}
+    except (RuntimeError, ValueError, KeyError) as e:
+        return {"ok": False, "msg": str(e)}
+    with st.lock:
+        st.messages.append(msg)
+    return {"ok": True, "msg": msg}
+
+
+def mcu_gateway(client_ip: str, body: dict) -> dict:
+    cmd = str(body.get("cmd", ""))
+    if client_ip != "127.0.0.1":
+        return {"ok": False, "msg": "Pi 내부 전용"}
+    if cmd not in ("STATUS", "START", "SIM CLEAR") and not cmd.startswith("SIM "):
+        return {"ok": False, "msg": f"허용하지 않는 명령: {cmd.split(' ')[0]}"}
+    try:
+        return {"ok": True, "reply": mcu_command(cmd, MCU_GATEWAY_TIMEOUT_S)}
+    except (OSError, ValueError) as e:
+        return {"ok": False, "msg": f"MCU 응답 없음: {e.__class__.__name__}"}
+
+
 def build_payload(st: MonitorState, thr: dict) -> dict:
     with st.lock:
         smp = list(st.samples)
@@ -568,6 +758,18 @@ def build_payload(st: MonitorState, thr: dict) -> dict:
         base.update({"t": [], "latest": None, "volts": [[]] * 4, "temps": [[]] * 4, "packI": [],
                      "grad_v": [[]] * 4, "grad_t": [[]] * 4, "grad_i": []})
     base["win"] = win
+    with st.lock:
+        p, age = dict(st.pcb), (time.time() - st.pcb_tick) if st.pcb_tick else None
+        e, e_age = dict(st.pcb_emu), (time.time() - st.pcb_emu_tick) if st.pcb_emu_tick else None
+    online = age is not None and age < 3.0
+    emu = not online
+    if emu:
+        p, online = (e or {"csv_fault": 0, "fault": 0, "stage": 0, "gpio": 0, "estop": 1, "ai": 0, "csv_ms": 0}), True
+    with st.lock:
+        base["drive_active"] = bool(not emu and st.drive_active and p.get("started"))
+    base["panel"] = getattr(st, "panel", "motor")
+    base["pcb"] = {"online": online, "emu": emu, **{k: p.get(k) for k in
+                   ("csv_fault", "fault", "stage", "gpio", "m1", "m2", "estop", "ai", "csv_ms", "started", "charge_on", "sim_fault", "sim_bits", "first_fault_ms", "algo", "remote", "valid")}}
     return base
 
 
@@ -618,6 +820,10 @@ def make_handler(st: MonitorState, experts: dict, thr: dict):
                     self._send(200, json.dumps({"ok": True, "n": n}).encode(), "application/json")
                 elif self.path == "/api/control":
                     self._send(200, json.dumps(control(st, body, out_sock)).encode(), "application/json")
+                elif self.path == "/api/motor":
+                    self._send(200, json.dumps(motor_action(st, body, out_sock)).encode(), "application/json")
+                elif self.path == "/api/mcu":
+                    self._send(200, json.dumps(mcu_gateway(self.client_address[0], body)).encode(), "application/json")
                 elif self.path == "/api/reset":
                     with st.lock:
                         st.reset()
@@ -660,9 +866,10 @@ def main() -> None:
     st = MonitorState()
     threading.Thread(target=udp_loop, args=(st, experts, thr), daemon=True).start()
     threading.Thread(target=relay_loop, args=(st,), daemon=True).start()
+    threading.Thread(target=pcb_poll_loop, args=(st,), daemon=True).start()
     srv = ThreadingHTTPServer((HOST, PORT), make_handler(st, experts, thr))
     print(f"[AE monitor] 모델 {MODEL_NAME} 로드 ({MODEL_DIR}, backend {BACKEND}) — http://0.0.0.0:{PORT}  "
-          f"(입력 UDP {UDP_IN_PORT}, 규약 {PROTO})")
+          f"(규약 {PROTO}: Mac 중계 입력 UDP {RELAY_IN_PORT} → PCB {PCB_ADDR[0]}:{PCB_ADDR[1]} → 입력 버퍼 UDP {UDP_IN_PORT})")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

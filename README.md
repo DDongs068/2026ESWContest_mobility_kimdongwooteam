@@ -13,23 +13,28 @@ flowchart LR
     end
     subgraph FW["MCU/ — STM32G474 펌웨어"]
         DRV["bq76922.c<br/>BMIC 드라이버"] --> APP["bms_app.c<br/>100 ms 측정 · 부하/충전/밸런싱"]
-        SAFE["safety_supervisor.c<br/>독립 안전 감시 · 래치"] --> APP
+        DEMO["bms_demo.c<br/>수신값 임계값 판정"] --> APP
         APP --> ETH["ethernet_test.c<br/>W5500 UDP 통신"]
-        DEMO["demo_stream.c<br/>시뮬레이션 측정 재생"] --> ETH
+        ETH --> DEMO
     end
-    subgraph PI["Raspberry Pi 5 — AI_AutoEncoder/RaspberryPi/"]
+    subgraph PI["Raspberry Pi 5 — AI_AutoEncoder(RaspberryPi)/RaspberryPi/"]
         RX["relay/receiver.py<br/>측정 수신 · 기록 · 엑셀 버퍼"] --> AE["monitor/monitor_server.py<br/>AE 판정 · 1 s 마다<br/>(3_model + 5_weights/AE)"]
-        AE --> UI["모니터 UI"]
-        RLY["relay/relay.py<br/>명령 중계"]
+        AE --> UI["모니터 UI<br/>판정 · 모터/충전 버튼"]
+        AG["control_panel/pi_agent.py<br/>패널 대리인"] --> RX
+        AG --> AE
     end
-    subgraph TRAIN["AI_AutoEncoder/ — 학습 PC"]
+    subgraph MAC["Mac — ControlPanel/"]
+        CP["패널 + MATLAB 워커<br/>실측으로 초기화해 고장 재현"]
+    end
+    subgraph TRAIN["AI_AutoEncoder(RaspberryPi)/ — 학습 PC"]
         SIM["Simscape 디지털 트윈<br/>정상 · 이상 시뮬레이션"] --> PRE["1_preprocess<br/>1 s 윈도우 요약"]
         PRE --> TR["2_train<br/>정상만 학습"] --> W["5_weights/AE"]
         W --> EV["4_eval<br/>평가"]
     end
     BQ -- "I²C" --> DRV
     ETH -- "UDP 5001 측정 (10 Hz)" --> RX
-    RLY -- "UDP 5000 명령 (AI:1 출력 차단)" --> ETH
+    AE -- "UDP 5002 명령 · SIM" --> ETH
+    CP -- "USB UDP 5020 고장 재현 값" --> AG
     W -. "Pi 에 올려 실행" .-> AE
 ```
 
@@ -38,24 +43,27 @@ flowchart LR
 ```
 2026ESWContest_mobility_kimdongwooteam/
 ├── MCU/                          STM32G474 펌웨어 (STM32CubeIDE 프로젝트)
-│   ├── Core/Src/                 main.c · bq76922.c · bms_app.c · safety_supervisor.c · ethernet_test.c · demo_stream.c
+│   ├── Core/Src/                 main.c · bq76922.c · bms_app.c · bms_demo.c · ethernet_test.c
 │   ├── Drivers/                  ST HAL · CMSIS
-│   └── aibms_true_final_mcu.ioc · Makefile · 링커 스크립트
-├── AI_AutoEncoder/               AE 이상 탐지
+│   └── aibms_1028_baseline.ioc · Makefile · 링커 스크립트
+├── AI_AutoEncoder(RaspberryPi)/               AE 이상 탐지
 │   ├── 1_preprocess/             전처리
 │   ├── 2_train/                  모델 학습
 │   ├── 3_model/                  모델 (PyTorch · Pi 용 numpy 추론)
 │   ├── 4_eval/                   평가
 │   ├── 5_weights/AE/             모델 가중치
-│   ├── RaspberryPi/              Pi 5 실행 코드: AE 판정 서버 · 모니터 UI · 통신 · 자동 실행 서비스
+│   ├── RaspberryPi/              Pi 5 실행 코드: AE 판정 서버 · 모니터 UI · 통신 · 패널 대리인 · 서비스
 │   └── figures/                  README 그림
+├── ControlPanel/                 Mac 컨트롤 패널: MATLAB 고장 재현 → Pi → AE · MCU
+└── test.sh                       전체 점검 (통신 · 서비스 · UI · MATLAB · 센싱 · MCU 판정 · 시나리오)
 ```
 
 | 폴더 | 내용 | 설명서 |
 |---|---|---|
-| [`MCU/`](MCU) | BQ76922 측정 · 안전 감시 · 부하/충전/밸런싱 제어 · Pi 통신 · 측정 재생 | [MCU/README.md](MCU/README.md) |
-| [`AI_AutoEncoder/`](AI_AutoEncoder) | 1. 전처리 · 2. 모델 학습 · 3. 모델 · 4. 평가 · 5. 모델 가중치 | [AI_AutoEncoder/README.md](AI_AutoEncoder/README.md) |
-| [`AI_AutoEncoder/RaspberryPi/`](AI_AutoEncoder/RaspberryPi) | Pi에서 AE를 실행하는 판정 서버 · 모니터 UI · 통신 코드 | [RaspberryPi/README.md](AI_AutoEncoder/RaspberryPi/README.md) |
+| [`MCU/`](MCU) | BQ76922 측정 · 모터/충전/밸런싱 제어 · 수신값 임계값 판정과 출력 차단 · Pi 통신 | [MCU/README.md](MCU/README.md) |
+| [`AI_AutoEncoder(RaspberryPi)/`](AI_AutoEncoder(RaspberryPi)) | 1. 전처리 · 2. 모델 학습 · 3. 모델 · 4. 평가 · 5. 모델 가중치 | [AI_AutoEncoder(RaspberryPi)/README.md](AI_AutoEncoder(RaspberryPi)/README.md) |
+| [`AI_AutoEncoder(RaspberryPi)/RaspberryPi/`](AI_AutoEncoder(RaspberryPi)/RaspberryPi) | Pi에서 AE를 실행하는 판정 서버 · 모니터 UI · 통신 코드 | [RaspberryPi/README.md](AI_AutoEncoder(RaspberryPi)/RaspberryPi/README.md) |
+| [`ControlPanel/`](ControlPanel) | 시연용 고장 재현 패널 (Soft ISC 3종, 과충전) | [ControlPanel/README.md](ControlPanel/README.md) |
 
 ---
 
@@ -71,9 +79,9 @@ MCU 펌웨어(STM32G474)의 코드 설명, 빌드 방법, 통신 규약, 안전 
 
 ### 구성
 
-학습은 PC에서 하고, **판정은 Raspberry Pi 5가 합니다.** Pi는 `AI_AutoEncoder`의 모델 코드와 가중치를 그대로 불러와 MCU가 보낸 측정값을 1 s마다 판정하고, 결과를 모니터 UI에 표시합니다. 판정 서버는 `AI_AutoEncoder/RaspberryPi`에 있습니다.
+학습은 PC에서 하고, **판정은 Raspberry Pi 5가 합니다.** Pi는 `AI_AutoEncoder(RaspberryPi)`의 모델 코드와 가중치를 그대로 불러와 MCU가 보낸 측정값을 1 s마다 판정하고, 결과를 모니터 UI에 표시합니다. 판정 서버는 `AI_AutoEncoder(RaspberryPi)/RaspberryPi`에 있습니다.
 
-![AE 구성](AI_AutoEncoder/figures/ae_architecture.png)
+![AE 구성](AI_AutoEncoder(RaspberryPi)/figures/ae_architecture.png)
 
 1. **입력**
    - 셀 전압 V1~V4, 셀 온도 T1~T4, 팩 전류 I를 10 Hz로 받습니다.
@@ -115,17 +123,31 @@ MCU 펌웨어(STM32G474)의 코드 설명, 빌드 방법, 통신 규약, 안전 
 | **하드웨어 보호보다 먼저 경보** | 보호가 동작한 23 run 중 **23 run**, 선행 시간 중앙 **약 5분** |
 | 하드웨어 보호가 끝까지 동작하지 않은 ISC | 37 run → AE는 모두 탐지 |
 
-![탐지 예시](AI_AutoEncoder/figures/ae_detection_example.png)
+![탐지 예시](AI_AutoEncoder(RaspberryPi)/figures/ae_detection_example.png)
 
 위 그림은 주행 중 셀2에 2.9 Ω 내부단락이 생긴 예입니다. AE는 8초 만에 경보를 냈고, 하드웨어 보호는 12.9분 뒤에 동작했습니다.
 
 ### 모니터 UI (Raspberry Pi 5)
 
-![모니터 UI](AI_AutoEncoder/figures/ui_monitor.png)
+![모니터 UI](AI_AutoEncoder(RaspberryPi)/figures/ui_monitor.png)
 
 - 셀별 전압·온도·전류와 그 변화율을 실시간으로 보여 줍니다.
 - 셀별 AE 이상도와 판정 결과(정상 / 이상, 이상 셀), 기존 임계값 판정을 함께 표시합니다.
+- MCU가 판정한 PCB 판정과 모터·충전 상태를 표시하고, 버튼으로 정상주행, 모터, 충전을 제어합니다.
 
 ### 실행
 
-[`AI_AutoEncoder/README.md`](AI_AutoEncoder/README.md)를 참고하세요.
+[`AI_AutoEncoder(RaspberryPi)/README.md`](AI_AutoEncoder(RaspberryPi)/README.md)를 참고하세요.
+
+---
+
+## 3. 시연
+
+Mac의 컨트롤 패널이 시작 순간의 실측값으로 디지털 트윈을 초기화해 고장을 재현하고, Pi를 거쳐 AE와 MCU로 보냅니다. AE는 복원오차로, MCU는 임계값으로 **각자** 판정하므로 AE가 먼저 경보를 내고 뒤이어 MCU가 저전압·과전압으로 출력을 차단하는 흐름을 볼 수 있습니다. 자세한 내용은 [ControlPanel/README.md](ControlPanel/README.md)에 있습니다.
+
+```bash
+bash "AI_AutoEncoder(RaspberryPi)/RaspberryPi/monitor/run.sh"   # 모니터 (Mac 에서 실행하면 Pi 에서 켜짐)
+zsh ControlPanel/run.sh                          # 컨트롤 패널
+bash test.sh                                     # 전체 점검. 모터·충전은 물어보고 y 일 때만 구동
+bash test.sh --readonly                          # 상태만 읽음
+```
