@@ -22,7 +22,7 @@
 ## 1. 폴더 구성
 
 ```
-AI_AutoEncoder/
+AI_AutoEncoder(RaspberryPi)/
 ├── 1_preprocess/preprocess.py   원본 run (10 Hz) → 1 s 윈도우 요약
 ├── 2_train/train.py             정상 데이터로 AE 학습 → 가중치 · 판정 경계
 ├── 3_model/
@@ -44,7 +44,7 @@ AI_AutoEncoder/
 pip install numpy pandas scipy torch matplotlib     # Pi 추론만 할 때는 numpy 만 있으면 됨
 ```
 
-- 모든 명령은 `AI_AutoEncoder/` 폴더에서 실행합니다.
+- 모든 명령은 `AI_AutoEncoder(RaspberryPi)/` 폴더에서 실행합니다.
 - 경로는 각 코드 맨 위에 상수로 들어 있습니다. 설정 파일이나 인자는 쓰지 않습니다.
 - **학습·평가용 원본 데이터는 저장소에 없습니다.**
   - Simscape 디지털 트윈으로 만든 시뮬레이션 run입니다.
@@ -173,11 +173,12 @@ python 4_eval/eval.py
 | 폴더 | 역할 |
 |---|---|
 | `RaspberryPi/monitor/` | `monitor_server.py`가 `3_model`과 `5_weights/AE`를 불러와 MCU 측정값을 1 s마다 판정하고, 결과를 모니터 UI(포트 8050)에 표시합니다. |
-| `RaspberryPi/relay/` | MCU 측정 수신(5001), 시뮬레이션 데이터 수신(5002), 엑셀 버퍼, 모니터로 전달(5005), Mac ↔ PCB 명령 중계(6000 → 5000) |
-| `RaspberryPi/systemd/` | 부팅할 때 위 코드를 자동으로 실행하는 서비스 파일 |
+| `RaspberryPi/relay/` | MCU 측정 수신(5001), 시뮬레이션 데이터 수신(5013), 엑셀 버퍼, 모니터로 전달(5005) |
+| `RaspberryPi/control_panel/` | Mac 컨트롤 패널의 Pi 쪽 대리인: 프레임을 AE 경로와 MCU로 분배 |
+| `RaspberryPi/systemd/` | 부팅할 때 수신·버퍼 코드를 자동으로 실행하는 서비스 파일 |
 
 ```bash
-bash RaspberryPi/monitor/run.sh        # Pi 에서: AE 판정 서버 + UI → http://<Pi IP>:8050
+bash RaspberryPi/monitor/run.sh        # AE 판정 서버 + UI → http://10.55.0.2:8050
 ```
 
 ---

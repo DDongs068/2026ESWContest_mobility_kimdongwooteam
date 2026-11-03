@@ -1,8 +1,6 @@
 #include "main.h"
 #include "bms_app.h"
 #include "ethernet_test.h"
-#include "demo_stream.h"
-#include "safety_supervisor.h"
 
 I2C_HandleTypeDef hi2c1;
 volatile Motor_Status g_motor;
@@ -22,17 +20,10 @@ int main(void)
     SystemClock_Config();
     MX_I2C1_Init();
     BMS_App_Init(&hi2c1);
-    Ethernet_Test_Init();
-    Safety_Init();
-    Safety_RefreshProfile();
+    Ethernet_Init();
     while (1) {
-        Safety_Update();
-        Demo_Update();
-        Safety_Update();
         BMS_App_Update();
-        Safety_Update();
-        Ethernet_Test_Update();
-        Safety_Update();
+        Ethernet_Update();
         HAL_Delay(5u);
     }
 }
@@ -135,6 +126,7 @@ static void MX_GPIO_Init(void)
 
   GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
+
   GPIO_InitStruct.Pin = GPIO_PIN_8 | GPIO_PIN_12;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
   GPIO_InitStruct.Pin = GPIO_PIN_2;
@@ -171,6 +163,7 @@ void Board_MotorSet(int32_t m1, int32_t m2)
     TIM2->CR1=TIM_CR1_ARPE|TIM_CR1_CEN;
     previous1=0; previous2=0;
   }
+
   TIM2->CCMR1=(TIM2->CCMR1&~0xFFFFu)|(6u<<4)|(1u<<3)|(6u<<12)|(1u<<11);
   GPIOA->AFR[0]=(GPIOA->AFR[0]&~255u)|0x11u;
   GPIOA->OTYPER&=~3u;
