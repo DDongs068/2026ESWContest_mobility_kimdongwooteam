@@ -1,149 +1,73 @@
-import glob
 import os
-from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 import pandas as pd
-from scipy.signal import lfilter
 
 AI_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RAW_DIR: str = os.path.join(AI_DIR, "raw")
-RAW_NORMAL: str = os.path.join(RAW_DIR, "normal")
-RAW_F3: str = os.path.join(RAW_DIR, "fault3")
+RAW_CSV: str = os.path.join(AI_DIR, "raw", "normal_windows.csv")
+SPLIT_CSV: str = os.path.join(AI_DIR, "data", "split_blocks.csv")
 DATA_DIR: str = os.path.join(AI_DIR, "data")
-SPLIT_CSV: str = os.path.join(DATA_DIR, "split_runs.csv")
 
-NTC_DT: float = 0.1
-NTC_TAU_S: float = 60.0
-NTC_SIGMA: tuple[float, float, float] = (0.15, 0.07, 0.025)
-NTC_SCALE: tuple[float, float] = (0.5, 1.5)
 WIN: int = 10
-WARMUP_S: float = 5.0
-SIG: list[str] = ["CellV1", "CellV2", "CellV3", "CellV4", "Temp1", "Temp2", "Temp3", "Temp4",
-                  "Bal1", "Bal2", "Bal3", "Bal4", "PackI"]
-SCN: dict[str, str] = {"rest": "rest", "accel": "accel_drive", "steady": "steady_drive", "charge": "charge",
-                       "drive": "mixed_drive"}
-N_PROC: int = 8
+BLOCK_WIN: int = 180
+HIST_WINDOWS: int = 55
+GAP_MS: float = 2000.0
+V_COLS: list[str] = ["V1", "V2", "V3", "V4"]
+T_COLS: list[str] = ["T1", "T2", "T3", "T4"]
+FILES: list[tuple[str, str, int, int]] = [
+    ("3cycle", "C", 0, 12292), ("samples_1", "A", 12293, 22368), ("samples_2", "A", 22369, 29059),
+    ("samples_3", "B", 29060, 39542), ("samples_4", "B", 39543, 55156), ("samples_0", "D", 55157, 64675)]
 
 
-def ntc_noise(n: int, seed: int) -> np.ndarray:
-    rng = np.random.default_rng(seed)
-    s = rng.uniform(*NTC_SCALE)
-    a = np.exp(-NTC_DT / NTC_TAU_S)
-    sc, si, sw = NTC_SIGMA
-
-    def ou(sig: float, k: int) -> np.ndarray:
-        e = rng.standard_normal((n, k)) * sig * np.sqrt(1 - a * a)
-        e[0] = rng.standard_normal(k) * sig
-        return lfilter([1.0], [1.0, -a], e, axis=0)
-
-    return s * (ou(sc, 1) + ou(si, 4) + sw * rng.standard_normal((n, 4)))
-
-
-def summarize_run(path: str, ntc_on: bool = True) -> tuple[np.ndarray, pd.DataFrame]:
-    base = os.path.basename(path)
-    rid, kind = int(base.split("_")[1]), base.split("_")[2].replace(".csv", "")
-    try:
-        d = pd.read_csv(path, usecols=["time_s", "phase", *SIG, "AnyFault"])
-    except (OSError, ValueError) as e:
-        raise RuntimeError(f"run 읽기 실패: {path}: {e}") from e
-    t, ph = d["time_s"].to_numpy(), d["phase"].to_numpy().astype(int)
-    d[["Bal1", "Bal2", "Bal3", "Bal4"]] = 0.0
-    T = d[["Temp1", "Temp2", "Temp3", "Temp4"]].to_numpy(dtype=np.float64)
-    if ntc_on:
-        T = T + ntc_noise(len(d), rid)
-    d[["Temp1", "Temp2", "Temp3", "Temp4"]] = np.round(T, 1)
-    X = d[SIG].to_numpy(dtype=np.float32)
-    V = d[["CellV1", "CellV2", "CellV3", "CellV4"]].to_numpy(dtype=np.float32)
-    first = int(np.searchsorted(t, WARMUP_S - 1e-9))
-    starts = [s for s in range(first, len(d) - WIN + 1, WIN) if not (kind == "rest" and np.any(ph[s:s + WIN] != 0))]
-    if not starts:
-        return np.zeros((0, 13), np.float32), pd.DataFrame()
-    idx = np.array(starts)[:, None] + np.arange(WIN)[None, :]
-    S = X[idx].mean(axis=1)
-    vmax = np.median(V[idx].max(axis=2), axis=1)
-    trip = t[d["AnyFault"].to_numpy() > 0]
-    meta = pd.DataFrame({"SimulationID": rid, "kind": kind, "WindowStart_s": np.round(t[starts], 3),
-                         "vmax_med": vmax, "trip_s": float(trip.min()) if len(trip) else np.inf})
-    return S.astype(np.float32), meta
+def load_windows() -> tuple[np.ndarray, pd.DataFrame]:
+    d = pd.read_csv(RAW_CSV, encoding="utf-8-sig")
+    if not (d.groupby("window_id").size() == WIN).all():
+        raise ValueError("10행이 아닌 윈도우 존재")
+    g = d.groupby("window_id", sort=False)
+    m = g[V_COLS + T_COLS + ["I"]].mean()
+    a = m.to_numpy(dtype=np.float32)
+    S = np.concatenate([a[:, :8], np.zeros((len(a), 4), np.float32), a[:, 8:]], axis=1)
+    w = pd.DataFrame({"window_id": m.index.to_numpy()})
+    w["seq0"], w["seq1"] = g["seq"].first().to_numpy(), g["seq"].last().to_numpy()
+    w["ms0"], w["ms1"] = g["ms"].first().to_numpy(), g["ms"].last().to_numpy()
+    w["vmax_med"] = d[V_COLS].max(axis=1).groupby(d["window_id"], sort=False).median().to_numpy()
+    w["file"], w["session"] = "", ""
+    for name, ses, a0, a1 in FILES:
+        k = w["window_id"].between(a0, a1)
+        w.loc[k, "file"], w.loc[k, "session"] = name, ses
+    return S, w
 
 
-def summarize_dir(raw_dir: str, ntc_on: bool = True) -> tuple[np.ndarray, pd.DataFrame]:
-    paths = sorted(p for p in glob.glob(os.path.join(raw_dir, "run_*.csv")) if not p.endswith("_meta.csv"))
-    if not paths:
-        raise FileNotFoundError(f"run 없음: {raw_dir}")
-    S_list, M_list = [], []
-    with ProcessPoolExecutor(N_PROC) as ex:
-        for i, (S, m) in enumerate(ex.map(summarize_run, paths, [ntc_on] * len(paths), chunksize=16), 1):
-            if len(S):
-                S_list.append(S)
-                M_list.append(m)
-            if i % 500 == 0 or i == len(paths):
-                print(f"    {os.path.basename(raw_dir)}: {i}/{len(paths)} run", flush=True)
-    return np.concatenate(S_list), pd.concat(M_list, ignore_index=True)
-
-
-def split_map() -> dict[int, str]:
-    try:
-        d = pd.read_csv(SPLIT_CSV)
-    except OSError as e:
-        raise RuntimeError(f"분할 목록 로드 실패: {SPLIT_CSV}: {e}") from e
-    return {int(r): sp for r, sp in zip(d["run_id"], d["split"])}
-
-
-def fault3_labels(meta: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    for p in glob.glob(os.path.join(RAW_F3, "run_*_meta.csv")):
-        try:
-            rows.append(pd.read_csv(p).iloc[0])
-        except (OSError, IndexError, ValueError) as e:
-            raise RuntimeError(f"fault3 메타 읽기 실패: {p}: {e}") from e
-    rm = pd.DataFrame(rows)[["run_id", "fault_type", "fault_mag", "fault_cell", "fault_start_s", "isc_mode", "twin", "tamb_C"]]
-    m = meta.merge(rm.rename(columns={"run_id": "SimulationID"}), on="SimulationID", how="left", validate="many_to_one")
-    s, t0, isc = m["WindowStart_s"].to_numpy(), m["fault_start_s"].to_numpy(), (m["fault_type"] == "softisc").to_numpy()
-    m["label"] = np.where(~isc, 0, np.where(s >= t0, 1, np.where(s + 1.0 <= t0, 0, -1)))
-    m["twin"] = m["twin"].astype(int)
-    return m
-
-
-def save(name: str, S: np.ndarray, meta: pd.DataFrame) -> None:
-    p = os.path.join(DATA_DIR, f"summary_{name}.npz")
-    with open(p + ".tmp", "wb") as f:
-        np.savez(f, S=S)
-    os.replace(p + ".tmp", p)
-    meta.to_csv(os.path.join(DATA_DIR, f"meta_{name}.csv.tmp"), index=False)
-    os.replace(os.path.join(DATA_DIR, f"meta_{name}.csv.tmp"), os.path.join(DATA_DIR, f"meta_{name}.csv"))
-    print(f"  저장: summary_{name}.npz {S.shape}, meta_{name}.csv {meta.shape}")
+def assign_split(w: pd.DataFrame) -> pd.DataFrame:
+    w = w.copy()
+    new = (w["file"] != w["file"].shift()) | (w["seq0"] != w["seq1"].shift() + 1) | (w["ms0"] - w["ms1"].shift() > GAP_MS)
+    w["seg"] = new.cumsum()
+    w["source"] = w["file"]
+    w["SimulationID"] = w["seg"].map("seg{:05d}".format)
+    w["WindowStart_s"] = w.groupby("seg").cumcount().astype(float)
+    w["fi"] = w.groupby("file").cumcount()
+    w["block"] = w["file"] + "_" + (w["fi"] // BLOCK_WIN).map("{:04d}".format)
+    w["split"] = w["block"].map(pd.read_csv(SPLIT_CSV, index_col="block")["split"])
+    use = np.ones(len(w), dtype=int)
+    change = np.where((w["split"] != w["split"].shift()) & (w["seg"] == w["seg"].shift()))[0]
+    for k in change:
+        use[k:k + HIST_WINDOWS] = 0
+    w["use"] = use
+    return w
 
 
 def main() -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
-    if not os.path.exists(os.path.join(DATA_DIR, "summary_normal.npz")):
-        print("[normal] 1 s 윈도우 요약")
-        S, m = summarize_dir(RAW_NORMAL)
-        sp = split_map()
-        m["split"] = m["SimulationID"].map(sp)
-        keep = m["split"].notna().to_numpy()
-        S, m = S[keep], m[keep].reset_index(drop=True)
-        m["scenario"] = m["kind"].map(SCN)
-        m["source"] = "normal"
-        print(f"  split: {m['split'].value_counts().to_dict()} (분할에 없는 run 제외 {int((~keep).sum())} 윈도우)")
-        save("normal", S, m)
-    for name, on in [("fault3", True), ("fault3_clean", False)]:
-        if os.path.exists(os.path.join(DATA_DIR, f"summary_{name}.npz")):
-            continue
-        print(f"[{name}] 1 s 윈도우 요약 (온도 보강 {'켬' if on else '끔'})")
-        S, m = summarize_dir(RAW_F3, on)
-        m = fault3_labels(m)
-        m["scenario"] = m["kind"].map(SCN)
-        m["source"] = "fault3"
-        print(f"  라벨: {m['label'].value_counts().to_dict()}")
-        save(name, S, m)
+    S, w = load_windows()
+    w = assign_split(w)
+    np.savez(os.path.join(DATA_DIR, "summary_normal.npz"), S=S)
+    w.to_csv(os.path.join(DATA_DIR, "meta_normal.csv"), index=False)
+    u = w[w["use"] == 1]
+    print("윈도우", len(w), "사용", len(u), u["split"].value_counts().to_dict())
 
 
 if __name__ == "__main__":
     try:
         main()
-    except Exception as e:
-        print(f"[오류] 전처리 실패: {e}")
-        raise
+    except (OSError, ValueError, KeyError) as e:
+        raise SystemExit(f"[오류] 전처리 실패: {e}")

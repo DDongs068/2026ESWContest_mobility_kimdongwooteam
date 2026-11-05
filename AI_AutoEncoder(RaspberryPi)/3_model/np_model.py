@@ -91,8 +91,8 @@ if __name__ == "__main__":
         import pandas as pd
         MODEL_DIR = WEIGHTS_DIR
         print("  변환:", [os.path.relpath(p, MODEL_DIR) for p in export_weights(MODEL_DIR)])
-        S = np.load(os.path.join(DATA_DIR, "summary_fault3.npz"))["S"][:3000]
-        meta = pd.read_csv(os.path.join(DATA_DIR, "meta_fault3.csv")).iloc[:3000]
+        S = np.load(os.path.join(DATA_DIR, "summary_normal.npz"))["S"][:3000]
+        meta = pd.read_csv(os.path.join(DATA_DIR, "meta_normal.csv")).iloc[:3000]
         H = routed_history(S, meta)
         for r in ("chg", "dis", "rest"):
             a = Expert(os.path.join(MODEL_DIR, r), torch.device("cpu")).scores(H[:500])
