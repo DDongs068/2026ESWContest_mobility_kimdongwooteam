@@ -23,7 +23,7 @@
 
 ```
 AI_AutoEncoder(RaspberryPi)/
-├── 1_preprocess/preprocess.py   원본 run (10 Hz) → 1 s 윈도우 요약
+├── 1_preprocess/preprocess.py   실측 CSV (10 Hz) → 1 s 윈도우 요약
 ├── 2_train/train.py             정상 데이터로 AE 학습 → 가중치 · 판정 경계
 ├── 3_model/
 │   ├── model.py                 AE 구조 · 이상 점수 · 전문가 로드 · 과충전 규칙 (PyTorch)
@@ -35,7 +35,7 @@ AI_AutoEncoder(RaspberryPi)/
 │   └── results/                 평가 결과
 ├── 5_weights/AE/                학습된 가중치 (충전 chg · 주행 dis · 휴지 rest) + threshold.json
 ├── RaspberryPi/                 Pi 5 에서 실행: AE 판정 서버 · 모니터 UI · 통신 코드 · 패널 대리인 · 자동 실행 서비스
-└── data/split_runs.csv          run 단위 학습 / 검증 / 테스트 분할
+└── data/split_blocks.csv        블록 단위 학습 / 검증 / 테스트 분할
 ```
 
 ## 2. 준비
@@ -47,8 +47,8 @@ pip install numpy pandas scipy torch matplotlib     # Pi 추론만 할 때는 nu
 - 모든 명령은 `AI_AutoEncoder(RaspberryPi)/` 폴더에서 실행합니다.
 - 경로는 각 코드 맨 위에 상수로 들어 있습니다. 설정 파일이나 인자는 쓰지 않습니다.
 - **학습·평가용 원본 데이터는 저장소에 없습니다.**
-  - Simscape 디지털 트윈으로 만든 시뮬레이션 run입니다.
-  - `raw/normal/`, `raw/fault3/`에 넣고 사용합니다.
+  - 실측 정상 CSV를 `raw/normal_windows.csv`에 둡니다.
+  - 비정상 시뮬레이션 데이터(`abnormal_index.csv`, `csv/`)를 `raw/abnormal/`에 둡니다.
   - 제공된 가중치(`5_weights/AE`)로 추론하는 것은 원본 데이터 없이 바로 됩니다.
 
 ---
@@ -57,25 +57,21 @@ pip install numpy pandas scipy torch matplotlib     # Pi 추론만 할 때는 nu
 
 ### 1_preprocess — 전처리
 
-**`preprocess.py`**: 10 Hz 원본 run을 모델 입력 단위인 **1 s 윈도우 요약**으로 바꿉니다.
+**`preprocess.py`**: 10 Hz 실측 CSV를 모델 입력 단위인 **1 s 윈도우 요약**으로 바꿉니다.
 
 | 단계 | 내용 |
 |---|---|
-| 윈도우 | 10샘플(1 s)을 평균합니다. 처음 5 s는 빼고, 1 s 간격으로 자릅니다. |
+| 윈도우 | 10샘플(1 s)을 평균합니다. |
 | 요약 S (13) | 셀 전압 V̄1~4, 셀 온도 T̄1~4, 밸런싱 B̄1~4(항상 0), 팩 전류 Ī. 과충전 규칙용으로 윈도우 최대 셀 전압 중앙값도 남깁니다. |
-| 온도 보강 | 정상 학습 데이터의 온도에 **실제 회로 NTC 센서 특성**을 넣습니다. 잔잔한 흔들림 σ 0.025 °C, 느린 오르내림 σ 0.15 / 0.07 °C, 0.1 °C 해상도입니다. 실제 센서 잡음으로 생기는 오경보를 막기 위한 처리이고, 가짜 이상 데이터는 만들지 않습니다. |
-| 라벨 (평가용) | 정상 run은 0입니다. ISC run은 고장 시작 이후 1, 이전 0, 경계에 걸친 윈도우는 −1(제외)입니다. 하드웨어 보호가 처음 동작한 시각(`trip_s`)도 기록합니다. |
-| 분할 | `data/split_runs.csv`의 run 단위 train / val / test를 따릅니다. |
+| 연속 구간 | 파일이 바뀌거나 seq가 끊기거나 간격이 2 s를 넘으면 새 구간입니다. 이력은 구간을 넘지 않습니다. |
+| 분할 | `data/split_blocks.csv`의 180 윈도우(약 3분) 블록 단위 train / val / test를 따릅니다. split이 바뀐 직후 55 윈도우는 이력이 다른 split을 포함하므로 쓰지 않습니다. |
 
 ```bash
 python 1_preprocess/preprocess.py
 ```
-- **입력**: `raw/normal/run_<id>_<kind>.csv`, `raw/fault3/run_<id>_<kind>.csv` + `_meta.csv`
-- **출력**: `data/` 아래 세 가지입니다.
-  - `summary_normal.npz` + `meta_normal.csv`
-  - `summary_fault3.npz` + `meta_fault3.csv` (온도 보강)
-  - `summary_fault3_clean.npz` + `meta_fault3_clean.csv` (원본 온도)
-- 이미 만들어진 파일이 있으면 건너뜁니다.
+- **입력**: `raw/normal_windows.csv` (`window_id, seq, ms, valid, V1..4, T1..4, I, STACK, PACK, LD`)
+- **출력**: `data/summary_normal.npz` + `data/meta_normal.csv`
+- 사용 윈도우: train 36,014 · val 6,400 · test 12,053
 
 ### 2_train — 모델 학습
 
@@ -83,11 +79,11 @@ python 1_preprocess/preprocess.py
 
 | 항목 | 값 |
 |---|---|
-| 학습 데이터 | 정상 train split만 (이상 데이터 미사용) |
+| 학습 데이터 | 실측 정상 train만 (이상 데이터 미사용) |
 | 셀 AE | 셀 하나를 샘플 하나로 봅니다. 4개 셀이 같은 가중치를 공유해, 한 셀만 다르게 움직이면 그 셀의 오차가 커집니다. |
-| 손실 | 복원오차 mean (ẑ − z)². 시나리오별로 균등하게 뽑아 학습합니다. |
+| 손실 | 복원오차 mean (ẑ − z)². 상태 라벨별로 균등하게 뽑아 학습합니다. |
 | 최적화 | AdamW lr 1e-3, weight decay 1e-4, cosine 스케줄, 60 epoch, early stopping 15 |
-| 판정 경계 | τ = 정상 val의 최대 오차 × 1.2 (경로별, 셀 / 팩 따로) |
+| 판정 경계 | 충전·주행 τ = 정상 val p99.5 × 1.2, 휴지 τ = 정상 val 최댓값 × 1.2 (셀 / 팩 따로) |
 
 ```bash
 python 2_train/train.py
@@ -113,7 +109,7 @@ python 2_train/train.py
 python 3_model/features.py      # 특징 계산 확인
 python 3_model/router.py        # 상태 판별 · 이력 리셋 확인
 python 3_model/model.py         # AE 구조 · 과충전 규칙 확인
-python 3_model/np_model.py      # .pt → .npz 변환 + torch 판과 점수 일치 확인 (data/ 필요)
+python 3_model/np_model.py      # .pt → .npz 변환 + torch 판과 점수 일치 확인 (전처리 결과 필요)
 ```
 
 **판정 규칙**
@@ -126,8 +122,9 @@ python 3_model/np_model.py      # .pt → .npz 변환 + torch 판과 점수 일�
 
 ### 4_eval — 평가
 
-**`eval.py`**: 제공 가중치로 fault3 평가 세트와 정상 test split을 판정합니다.
-- fault3: 위험 soft ISC 1~25 Ω 60 run + 같은 프로파일 정상 60 run
+**`eval.py`**: 제공 가중치로 정상 test와 비정상 시뮬레이션 test를 판정합니다.
+- 정상: 학습에 쓰지 않은 실측 test 12,053 윈도우
+- 이상: 실측에 Simscape 고장을 더한 test 118 파일의 `label=1` 윈도우 12,494개. Soft ISC 1~10 Ω(주행·휴지·충전), 과충전(CV 상실)
 
 ```bash
 python 4_eval/eval.py
@@ -136,16 +133,15 @@ python 4_eval/eval.py
 | 지표 | 의미 |
 |---|---|
 | confusion matrix · recall · precision · 오경보율 | 1 s 윈도우 단위 |
-| 정상 구간 오경보/h · 경보 시간 % | 고장 전과 정상 run에서 경보가 울린 횟수와 비율 |
-| ISC 탐지 · 지연 (중앙 / 최대) | 고장 시작부터 첫 경보까지 걸린 시간 |
-| 고장 후 탐지율 · 위치 정답 % | 고장 뒤 경보가 유지된 비율, 고장 셀을 맞힌 비율 |
-| HW 보호보다 먼저 · 선행 시간 | 하드웨어 보호(COV / CUV / OCD / OT)보다 먼저 경보한 run과 앞선 시간 |
+| 파일 탐지 · 고장 전 경보 | 파일별 탐지 여부, 고장 시작 전 구간의 경보 수 |
+| 고장 후 첫 경보 | 고장 시작부터 첫 경보까지 걸린 시간 |
+| 임계값 보호 대비 | COV, CUV, OCD, OT 보호가 동작한 파일과 AE가 먼저 경보한 수 |
 
 - **출력**: `4_eval/results/results.txt`, `compare.csv`
-- **현재 결과** (온도 보강 fault3)
-  - ISC 60/60 탐지, 탐지 지연 중앙 2 s
-  - recall 97.0 %, 오경보율 1.3 %
-  - 하드웨어 보호가 동작한 23 run 모두에서 먼저 경보, 중앙 약 5분 앞섬
+- **현재 결과**: TN 11,962 · FP 91 · FN 219 · TP 12,275
+  - recall 98.2 %, 오경보율 0.76 %, 파일 118/118
+  - 오경보 91건 중 72건이 휴지 (휴지 오경보율 6.5 %)
+  - 고장 시작 전 경보 0건
 
 ### 5_weights — 모델 가중치
 
@@ -160,11 +156,11 @@ python 4_eval/eval.py
      └── stats_cell.json  stats_pack.json      정규화 통계 (정상 train 의 median · scale)
 ```
 
-| 경로 | τ_cell | τ_pack | 학습 윈도우 |
-|---|---|---|---|
-| 충전 `chg` | 0.509 | 0.673 | 52,805 |
-| 주행 `dis` | 1.171 | 0.835 | 95,688 |
-| 휴지 `rest` | 1.188 | 0.794 | 41,903 |
+| 경로 | τ_cell | τ_pack | τ 규칙 | 학습 윈도우 |
+|---|---|---|---|---|
+| 충전 `chg` | 1.424 | 0.887 | val p99.5 × 1.2 | 8,278 |
+| 주행 `dis` | 1.706 | 0.513 | val p99.5 × 1.2 | 23,178 |
+| 휴지 `rest` | 0.990 | 0.609 | val 최댓값 × 1.2 | 4,558 |
 
 ### RaspberryPi — Pi 실시간 판정
 
@@ -205,20 +201,21 @@ thr = json.load(open("5_weights/AE/threshold.json", encoding="utf-8"))["experts"
 cell, pack = NpExpert(f"5_weights/AE/{route}").scores(H)                  # (1, 4), (1,)
 ratio = max(cell[0].max() / thr["cell"], pack[0] / thr["pack"])
 print(route, "이상" if ratio > 1 else "정상", f"이상도 {ratio:.2f}", "셀", int(cell[0].argmax()) + 1)
-# → dis 정상 이상도 0.01 셀 1
-# 셀2 전압만 최근 30 s 동안 60 mV 처지게 하면 → dis 이상 이상도 17.86 셀 2
+# → dis 정상 이상도 0.37 셀 1
+# 셀2 전압만 최근 30 s 동안 60 mV 처지게 하면 → dis 이상 이상도 4.79 셀 2
 ```
 
 - 상태가 바뀌면 이력을 그 시점부터 새로 채웁니다. 모자란 칸은 구간의 첫 윈도우로 채웁니다(`router.routed_history`와 같은 규칙).
-- 판정 1회에 Raspberry Pi 5 기준 약 2 ms가 걸립니다.
+- 판정 1회에 Raspberry Pi 5 기준 약 0.65 ms가 걸립니다 (numpy, 1스레드).
 
 ## 5. 데이터 형식
 
-**원본 run CSV** (`raw/`, 10 Hz): `time_s, phase, CellV1..4, Temp1..4, Bal1..4, PackI, AnyFault, ...`
+**실측 정상 CSV** (`raw/normal_windows.csv`, 10 Hz, 10행 = 1윈도우): `window_id, seq, ms, valid, V1..4, T1..4, I, STACK, PACK, LD`
 - 전류는 충전 +, 방전 −입니다.
-- `AnyFault`는 하드웨어 보호 동작 여부입니다.
 
-**fault3 메타** (`raw/fault3/run_<id>_<kind>_meta.csv`): `run_id, kind, twin, fault_type, fault_cell, fault_mag(Ω), fault_start_s, ...`
-- `twin = 1`이면 같은 프로파일의 정상 run입니다.
+**비정상 CSV** (`raw/abnormal/csv/`): 위 열 + `fault_on, label`
+- 실측 val·test 블록에 고장과 정상 쌍둥이 시뮬레이션의 차이를 더한 값입니다.
+- `fault_on = 1`: 고장 시작 이후. `label = 1`: 어느 셀이든 |ΔV| ≥ 20 mV 또는 |ΔT| ≥ 1 °C가 된 이후입니다.
+- `fault_on = 1, label = 0` 구간은 평가에서 세지 않습니다.
 
-**분할** (`data/split_runs.csv`): `run_id, split` (train 2,969 · val 636 · test 636 run)
+**분할** (`data/split_blocks.csv`): `block, split` (180 윈도우 블록 362개: train 227 · val 50 · test 85)
